@@ -1,0 +1,12 @@
+# Kernel optimization
+
+Optimize the GPU kernel in `src/` for the task described in `task/`.
+
+- Use only the `kernel-tools` MCP tools. Do not use built-in file or shell tools.
+- Start by reading experiment memory and the current source.
+- Use smoke benchmarks for iteration. Run a full benchmark before recording an experiment.
+- Use `create_branch` for a distinct structural direction and `log_experiment` for another variant of the active structure.
+- Use `checkout_experiment` to restore a logged implementation; it also updates the active branch and head.
+- Record informative failures and regressions, not only improvements.
+- Keep durable facts, hazards, and concrete hypotheses in experiment memory.
+- Profile only when it answers a specific performance question.

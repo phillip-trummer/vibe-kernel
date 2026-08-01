@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vibe-kernel"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=2.0.0,<3",
+    "pydantic",
+    "flashinfer-bench==0.1.2",
+    "torch>=2.8.0,<3",
+]
+
+[project.scripts]
+kernel-tools-mcp = "kernel_tools.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kernel_tools"]
