@@ -4,7 +4,7 @@ SOL-ExecBench uses a BuildSpec incompatible with flashinfer-bench: `languages`
 (a list) replaces `language`, and `target_hardware` is narrowed to the enum
 {B200, LOCAL}. Everything else about the solution object carries over unchanged.
 
-    python scripts/solution_to_sol.py path/to/flashinfer_solution.json \
+    uv run python scripts/solution_to_sol.py path/to/flashinfer_solution.json \
         path/to/sol_solution.json
 
 The converter is intentionally file-to-file so you can point it at any baseline

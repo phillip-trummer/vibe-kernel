@@ -14,8 +14,8 @@ the reference implementation is the correctness oracle and the speedup denominat
 and it does change across revisions (tag `1.0`'s MLA decode reference returns a dict
 where `main` returns a tuple).
 
-    python scripts/download_data.py
-    python scripts/download_data.py --metadata-only
+    uv run python scripts/download_data.py
+    uv run python scripts/download_data.py --metadata-only
 """
 from __future__ import annotations
 
@@ -62,7 +62,10 @@ def main(argv=None) -> int:
     }
     summary = ", ".join(f"{n} {name}" for name, n in counts.items())
     print(f"[Data] done: {summary or 'no files'}.")
-    print(f"\nNext: seed a task from it, e.g.\n  python scripts/seed_task.py --list")
+    print(
+        "\nNext: seed a task from it, e.g.\n"
+        "  uv run python scripts/seed_task.py --list"
+    )
     return 0
 
 

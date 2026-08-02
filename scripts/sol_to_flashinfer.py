@@ -1,6 +1,6 @@
 """Translate a SOL-ExecBench Solution JSON into a FlashInfer Solution JSON.
 
-    python scripts/solution_to_flashinfer.py path/to/sol_solution.json \
+    uv run python scripts/solution_to_flashinfer.py path/to/sol_solution.json \
         path/to/flashinfer_solution.json
 
 The converter changes only the backend-specific build spec. Hardware is kept

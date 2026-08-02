@@ -5,12 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "vibe-kernel"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
-    "mcp>=2.0.0,<3",
-    "pydantic",
     "flashinfer-bench==0.1.2",
-    "torch>=2.8.0,<3",
+    "mcp>=2.0.0,<3",
+    "pydantic>=2,<3",
+    "sol-execbench",
+    "torch==2.9.0",
 ]
 
 [project.scripts]
@@ -18,3 +19,14 @@ kernel-tools-mcp = "kernel_tools.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kernel_tools"]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+sol-execbench = { git = "https://github.com/NVIDIA/SOL-ExecBench.git" }
+torch = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]

@@ -1,6 +1,6 @@
 """Create task/ and src/ for one kernel workspace.
 
-    python scripts/seed_task.py \
+    uv run python scripts/seed_task.py \
         --workspace .runs/mla-sol \
         --task mla_paged_decode_h16_ckv512_kpe64_ps1 \
         --adapter sol \

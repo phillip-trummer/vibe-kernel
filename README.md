@@ -12,7 +12,7 @@ Agent tools for GPU kernel optimization using Claude Code or Codex.
 | `read_source` | Read a kernel source file. |
 | `edit_source`, `write_source` | Modify a kernel source file. |
 | `benchmark_kernel` | Build, validate, and benchmark the kernel. |
-| `profile_kernel` | Profile a representative workload with Nsight Compute; only available for cuda kernels. |
+| `profile_kernel` | Profile the current implementation on a representative workload with Nsight Compute. |
 
 Supported benchmark backends:
 
@@ -31,18 +31,21 @@ Kernel optimization is iterative and the search space is deep enough that no sin
 
 ## Quick start
 
-Requirements: a CUDA-capable NVIDIA GPU and either Claude Code or Codex.
+Requirements: Python 3.12+, `uv`, a CUDA-capable NVIDIA GPU, CUDA Toolkit 13,
+and either Claude Code or Codex. Nsight Compute (`ncu`) is required for
+profiling.
 
-Install the MCP server from the repository root:
+Install the project environment and check the MCP server from the repository
+root:
 
 ```bash
-uv tool install -e .
-kernel-tools-mcp --help
+uv sync
+uv run kernel-tools-mcp --help
 ```
 
 ### Create a workspace
 
-The repository includes example data and two setup scripts. Choose one:
+The repository includes example data and setup scripts. Choose one:
 
 ```bash
 # Start with an empty CUDA scaffold and only the kernel tools
@@ -55,24 +58,18 @@ bash mla_flash_stub.sh .runs/my_run
 bash mla_flash_memory.sh .runs/my_run
 ```
 
+For a SOL workspace, use `mla_sol_stub.sh`.
+
 The scripts seed and validate the workspace, add shared agent instructions, and
 configure Claude Code. Use a new output path for each run.
-
-SOL-ExecBench is not published on PyPI. Before using the SOL example, install a
-local checkout into the same `uv` tool environment:
-
-```bash
-git clone https://github.com/NVIDIA/SOL-ExecBench.git ../SOL-ExecBench
-uv tool install -e . --with-editable ../SOL-ExecBench
-```
 
 To use another task from the
 [`flashinfer-trace`](https://huggingface.co/datasets/flashinfer-ai/flashinfer-trace)
 dataset, download the full dataset first (about 13 GB):
 
 ```bash
-python scripts/download_data.py
-python scripts/seed_task.py --list
+uv run python scripts/download_data.py
+uv run python scripts/seed_task.py --list
 ```
 
 ### Start an agent
@@ -84,11 +81,10 @@ cd .runs/my_run
 claude
 ```
 
-For Codex, register the server from the workspace before starting the agent:
+Codex also reads the generated project configuration automatically:
 
 ```bash
 cd .runs/my_run
-codex mcp add kernel-tools -- kernel-tools-mcp --workspace "$PWD"
 codex
 ```
 
@@ -112,7 +108,7 @@ The workspace must include the kernel source files and task fixtures (kernel spe
 Validate its structure without building or running the kernel:
 
 ```bash
-python scripts/validate_workspace.py --workspace .runs/my_run
+uv run python scripts/validate_workspace.py --workspace .runs/my_run
 ```
 
 Reopen the same directory to continue a previous run.

@@ -4,7 +4,7 @@ This is not required to create or run a workspace. Run it before starting an
 experiment to pin a comparison target, record the current src/ as the baseline,
 or both. It refuses to replace existing memory.
 
-    python scripts/seed_memory.py \
+    uv run python scripts/seed_memory.py \
         --workspace .runs/mla-flash \
         --target data/flashinfer-trace/solutions/vibe-kernel/opus4.8-25-07_flashinfer.json \
         --baseline

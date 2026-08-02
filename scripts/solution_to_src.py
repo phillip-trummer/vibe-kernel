@@ -1,7 +1,7 @@
 """Materialize a FlashInfer solution JSON into source files.
 
 Usage:
-  python scripts/solution_to_src.py path/to/solution.json path/to/src_dir
+  uv run python scripts/solution_to_src.py path/to/solution.json path/to/src_dir
 
 The destination is created if needed. Existing files with the same names are
 overwritten; other files are left alone unless --clean is passed.

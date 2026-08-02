@@ -1,7 +1,7 @@
 """Package raw source files into a FlashInfer solution JSON.
 
 Usage:
-  python scripts/src_to_solution.py path/to/src_dir path/to/solution.json \
+  uv run python scripts/src_to_solution.py path/to/src_dir path/to/solution.json \
       --definition <task-definition-name> [--language cuda] [--dep cutlass] ...
 
 The inverse of solution_to_src.py: a user authors a kernel as plain source

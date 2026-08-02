@@ -1,6 +1,6 @@
 """Add optional Codex and Claude Code configuration to a workspace.
 
-    python scripts/configure_clients.py \
+    uv run python scripts/configure_clients.py \
         --workspace .runs/mla-sol \
         --template simple.md \
         --deny-builtins
@@ -68,20 +68,31 @@ def configure_clients(
     if unknown:
         raise SystemExit(f"Error: unknown tools: {', '.join(sorted(unknown))}")
 
+    server_args = [
+        "kernel-tools-mcp",
+        "--workspace",
+        str(workspace),
+        "--tools",
+        *tool_names,
+    ]
     mcp_config = {
         "mcpServers": {
             "kernel-tools": {
                 "type": "stdio",
-                "command": "kernel-tools-mcp",
-                "args": [
-                    "--workspace",
-                    str(workspace),
-                    "--tools",
-                    *tool_names,
-                ],
+                "command": "uv",
+                "args": ["run", "--project", str(REPO_ROOT), *server_args],
             }
         }
     }
+    codex_config = (
+        "[mcp_servers.kernel-tools]\n"
+        'command = "uv"\n'
+        f"cwd = {json.dumps(str(REPO_ROOT))}\n"
+        f"args = {json.dumps(['run', *server_args])}\n"
+        f"enabled_tools = {json.dumps(list(tool_names))}\n"
+        'default_tools_approval_mode = "approve"\n'
+        "tool_timeout_sec = 3600\n"
+    )
     permissions = {
         "allow": [f"mcp__kernel-tools__{name}" for name in tool_names],
     }
@@ -114,6 +125,7 @@ def configure_clients(
         workspace / ".claude" / "settings.json": (
             json.dumps(claude_settings, indent=2) + "\n"
         ),
+        workspace / ".codex" / "config.toml": codex_config,
     }
     existing = [path for path in files if path.exists()]
     if existing and not force:
@@ -126,6 +138,7 @@ def configure_clients(
 
     print(f"Configured agent clients in {workspace}")
     print("Claude Code will load the project-scoped kernel-tools MCP server.")
+    print("Codex will load the project-scoped kernel-tools MCP server.")
     print(f"Instructions: {template_path.name}")
     if include_task_description:
         print("Included task description in AGENTS.md")

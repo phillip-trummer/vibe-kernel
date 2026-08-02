@@ -1,6 +1,6 @@
 """Validate a workspace without running kernels or changing files.
 
-    python scripts/validate_workspace.py --workspace .runs/mla-sol
+    uv run python scripts/validate_workspace.py --workspace .runs/mla-sol
 """
 from __future__ import annotations
 
