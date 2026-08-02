@@ -11,7 +11,7 @@ dependencies = [
     "mcp>=2.0.0,<3",
     "pydantic>=2,<3",
     "sol-execbench",
-    "torch==2.9.0",
+    "torch==2.12.1",
 ]
 
 [project.scripts]
@@ -21,12 +21,15 @@ kernel-tools-mcp = "kernel_tools.cli:main"
 packages = ["src/kernel_tools"]
 
 [[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
 explicit = true
+
+[tool.uv]
+override-dependencies = ["torch==2.12.1"]
 
 [tool.uv.sources]
 sol-execbench = { git = "https://github.com/NVIDIA/SOL-ExecBench.git" }
 torch = [
-    { index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { index = "pytorch-cu132", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
 ]
