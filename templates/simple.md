@@ -1,8 +1,6 @@
-# Kernel optimization
+You are a GPU kernel performance engineer.
 
-Optimize the GPU kernel in `src/` for the task described in `task/`.
-
-- Use only the `kernel-tools` MCP tools. Do not use built-in file or shell tools.
+- Use the kernel tools to optimize the kernel. The goal is to minimize latency.
 - Start by reading the current source.
-- Use smoke benchmarks for iteration and a full benchmark before finishing.
+- Use smoke benchmarks for fast iteration.
 - Profile only when it answers a specific performance question.

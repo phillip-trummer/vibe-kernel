@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 
 CLAUDE_INSTRUCTIONS = "@AGENTS.md\n"
-TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+TEMPLATE_DIR = REPO_ROOT / "templates"
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 TOOL_NAMES = (
     "read_source",
@@ -36,6 +39,7 @@ def configure_clients(
     force: bool = False,
     tools: list[str] | tuple[str, ...] | None = None,
     deny_builtins: bool = False,
+    include_task_description: bool = False,
 ) -> None:
     workspace = workspace.expanduser().resolve()
     missing = [
@@ -89,8 +93,22 @@ def configure_clients(
         "enabledMcpjsonServers": ["kernel-tools"],
         "permissions": permissions,
     }
+    instructions = template_path.read_text()
+    if include_task_description:
+        from kernel_tools.tools import _tree
+
+        try:
+            memory = _tree.create_memory(workspace)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(
+                f"Error: could not read workspace task: {exc}"
+            ) from exc
+        task_description = "\n".join(_tree.render_task_spec(memory)).rstrip()
+        if task_description:
+            instructions = f"{instructions.rstrip()}\n\n{task_description}\n"
+
     files = {
-        workspace / "AGENTS.md": template_path.read_text(),
+        workspace / "AGENTS.md": instructions,
         workspace / "CLAUDE.md": CLAUDE_INSTRUCTIONS,
         workspace / ".mcp.json": json.dumps(mcp_config, indent=2) + "\n",
         workspace / ".claude" / "settings.json": (
@@ -109,6 +127,8 @@ def configure_clients(
     print(f"Configured agent clients in {workspace}")
     print("Claude Code will load the project-scoped kernel-tools MCP server.")
     print(f"Instructions: {template_path.name}")
+    if include_task_description:
+        print("Included task description in AGENTS.md")
     print(f"Allowed tools: {', '.join(tool_names)}")
 
 
@@ -131,6 +151,11 @@ def main(argv=None) -> int:
         help="Deny Claude Code's Bash, Read, and Edit tools.",
     )
     parser.add_argument(
+        "--include-task-description",
+        action="store_true",
+        help="Append the task specification from experiment memory to AGENTS.md.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Replace existing instructions, .mcp.json, and Claude settings.",
@@ -142,6 +167,7 @@ def main(argv=None) -> int:
         force=args.force,
         tools=args.tools,
         deny_builtins=args.deny_builtins,
+        include_task_description=args.include_task_description,
     )
     return 0
 

@@ -19,6 +19,7 @@ python scripts/validate_workspace.py --workspace "$workspace_path"
 python scripts/configure_clients.py \
     --workspace "$workspace_path" \
     --template simple.md \
+    --include-task-description \
     --deny-builtins \
     --tools \
         read_source \

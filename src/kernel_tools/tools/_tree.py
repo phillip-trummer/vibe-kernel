@@ -441,7 +441,7 @@ def set_finding(
 def render_memory(memory: dict) -> str:
     lines = ["# Experiment Memory", ""]
     lines.extend(_render_header(memory))
-    lines.extend(_render_task_spec(memory))
+    lines.extend(render_task_spec(memory))
     lines.extend(
         _render_current_state(
             memory,
@@ -456,7 +456,7 @@ def render_memory(memory: dict) -> str:
 def render_catalog_memory(workspace: Path, memory: dict) -> str:
     lines = ["# Experiment Memory", ""]
     lines.extend(_render_header(memory))
-    lines.extend(_render_task_spec(memory))
+    lines.extend(render_task_spec(memory))
     lines.extend(_render_current_state(memory, workspace=workspace))
     branch_ids = list_branch_ids(memory)
     lines.extend(_render_branch_collection(memory, branch_ids, full=False))
@@ -722,7 +722,8 @@ def _indent(lines: list[str], prefix: str) -> list[str]:
     return [prefix + line if line else line for line in lines]
 
 
-def _render_task_spec(memory: dict) -> list[str]:
+def render_task_spec(memory: dict) -> list[str]:
+    """Render the task-specification section used in memory Markdown."""
     spec = memory.get("task_spec") or {}
     if not spec:
         return []
