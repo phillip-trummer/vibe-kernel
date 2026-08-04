@@ -6,6 +6,7 @@ representative workload's inputs, warms up, then runs measured iterations
 inside cudaProfilerStart/Stop.
 """
 
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,11 @@ from ._workloads import REPRESENTATIVE_WORKLOAD_LABELS
 _WARMUP_ITERS = 5
 _PROFILE_ITERS = 1
 _MAX_OUTPUT_BYTES = 50_000
+_NCU_DEFAULTS = {
+    "--cache-control": "all",
+    "--clock-control": "boost",
+    "--replay-mode": "kernel",
+}
 
 
 SCHEMA = {
@@ -27,10 +33,17 @@ SCHEMA = {
     "description": (
         "Profile the current working kernel with Nsight Compute, or introspect ncu. "
         "Pass representative_workload to profile one concrete representative workload "
-        "(small, medium, large, or xlarge) and return ncu's report verbatim. "
+        "(small, medium, large, or xlarge) and return ncu's report with a short "
+        "profiling-context header. Use benchmark_kernel to rank variants: ncu measures "
+        "individual kernels under profiler cache, clock, and replay policies, so its "
+        "duration is not directly comparable to benchmark_kernel's full-call latency. "
         "Omit representative_workload to run ncu with no target "
         "— for informational flags like `--help`, `--list-sets`, `--list-sections`, "
         "`--query-metrics`. ncu_args are forwarded as-is to ncu. "
+        "For application-realistic timing of a kernel that consumes cache state "
+        "produced by earlier kernels, consider `--cache-control none`; ncu otherwise "
+        "flushes GPU caches before replay. This is best suited to single-pass metric "
+        "collections, since preserving caches can make replayed metrics less reproducible. "
         f"Output is capped at ~{_MAX_OUTPUT_BYTES // 1000} KB; if truncated, narrow "
         "the run with ncu flags."
     ),
@@ -49,7 +62,9 @@ SCHEMA = {
                 "items": {"type": "string"},
                 "default": [],
                 "description": (
-                    "Flags forwarded verbatim to ncu. "
+                    "Flags forwarded verbatim to ncu. For application-realistic "
+                    "warm-cache timing, pass `[\"--cache-control\", \"none\"]`, preferably "
+                    "with metrics that require only one replay pass."
                 ),
             },
         },
@@ -113,7 +128,56 @@ def profile_kernel(
         out = result.stdout
         if result.stderr:
             out += "\n--- stderr ---\n" + result.stderr
-    return _tail_cap(out, _MAX_OUTPUT_BYTES)
+    if representative_workload is None:
+        return _tail_cap(out, _MAX_OUTPUT_BYTES)
+    header = _profile_context_header(ncu_args or [], out)
+    body_limit = max(1, _MAX_OUTPUT_BYTES - len(header.encode("utf-8")))
+    return header + _tail_cap(out, body_limit)
+
+
+def _profile_context_header(ncu_args: list[str], report: str) -> str:
+    settings = {
+        option.removeprefix("--"): _ncu_option_value(ncu_args, option, default)
+        for option, default in _NCU_DEFAULTS.items()
+    }
+    passes = _observed_replay_passes(report)
+    pass_text = ", ".join(f"{name}:{count}" for name, count in passes)
+    if not pass_text:
+        pass_text = "not reported by ncu"
+    return (
+        "[profiling context]\n"
+        f"cache-control={settings['cache-control']}; "
+        f"clock-control={settings['clock-control']}; "
+        f"replay-mode={settings['replay-mode']}; "
+        f"profile-iterations={_PROFILE_ITERS}; observed-replay-passes={pass_text}\n"
+        "Use benchmark_kernel to rank end-to-end variants. NCU kernel duration is "
+        "measured under the settings above and is not directly comparable to "
+        "benchmark_kernel full-call latency.\n"
+        "[/profiling context]\n\n"
+    )
+
+
+def _ncu_option_value(args: list[str], option: str, default: str) -> str:
+    value = None
+    prefix = option + "="
+    for index, arg in enumerate(args):
+        if arg.startswith(prefix):
+            value = arg[len(prefix) :]
+        elif arg == option and index + 1 < len(args):
+            value = args[index + 1]
+    return value if value is not None else f"{default} (ncu default)"
+
+
+def _observed_replay_passes(report: str) -> list[tuple[str, int]]:
+    observed: list[tuple[str, int]] = []
+    for line in report.splitlines():
+        match = re.search(
+            r'Profiling "([^"]+)".*-\s+(\d+)\s+pass(?:es)?\s*$',
+            line,
+        )
+        if match:
+            observed.append((match.group(1), int(match.group(2))))
+    return observed
 
 
 def _tail_cap(text: str, limit: int) -> str:
