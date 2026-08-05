@@ -153,7 +153,6 @@ def _load_solution(path: Path, definition: str, adapter: str) -> dict:
         raise SystemExit(
             f"Error: {path.name} is not a native {adapter} solution."
         )
-    spec.setdefault("destination_passing_style", False)
 
     sources = solution.get("sources")
     if not isinstance(sources, list) or not sources:

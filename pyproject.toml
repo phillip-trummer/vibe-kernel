@@ -7,7 +7,7 @@ name = "vibe-kernel"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "flashinfer-bench==0.1.2",
+    "flashinfer-bench @ git+https://github.com/flashinfer-ai/flashinfer-bench.git@40e6ca7844b514eb4b1c7edba6d6a7377df57870",
     "mcp>=2.0.0,<3",
     "pydantic>=2,<3",
     "sol-execbench",
@@ -19,6 +19,9 @@ kernel-tools-mcp = "kernel_tools.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kernel_tools"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [[tool.uv.index]]
 name = "pytorch-cu132"

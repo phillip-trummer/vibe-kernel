@@ -43,9 +43,6 @@ def _translate_spec(spec: dict, hardware: str) -> dict:
         translated["languages"] = [LANGUAGES[language]]
         translated["target_hardware"] = [hardware]
 
-    # SOL defaults this to True and then calls fn(*inputs, *outputs), discarding the
-    # return value — so an unset flag silently fails every workload. Pin it.
-    translated.setdefault("destination_passing_style", False)
     return translated
 
 

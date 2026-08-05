@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import sys
 from pathlib import Path
 from typing import Callable
 
@@ -66,6 +65,8 @@ class FlashInferAdapter:
         self.workspace = workspace
         self.representative_workloads = representative_workloads
         self.definition, self.workload_traces = _load_task(workspace)
+        self.benchmark_config = _bench_config()
+        self.eval_config = self.benchmark_config.resolve_eval_config(self.definition)
 
     def benchmark(self, scope: str) -> list[WorkloadResult]:
         """Build the current src/ kernel, run it against the workloads (all, or
@@ -81,9 +82,19 @@ class FlashInferAdapter:
                 self.representative_workloads,
                 lambda trace: str(trace.workload.uuid),
             )
-        traces = _run_benchmark(self.workspace, self.definition, solution, workloads)
+        traces = _run_benchmark(
+            self.workspace,
+            self.definition,
+            solution,
+            workloads,
+            self.benchmark_config,
+        )
         _append_traces_to_archive(self.workspace, traces)
-        return _workload_results(traces, self.representative_workloads)
+        return _workload_results(
+            traces,
+            self.representative_workloads,
+            self.eval_config,
+        )
 
     def benchmark_target(self, target_path: Path) -> list[WorkloadResult]:
         """Benchmark the target Solution at target_path (a .json file) against the
@@ -95,8 +106,13 @@ class FlashInferAdapter:
             self.definition,
             solution,
             self.workload_traces,
+            self.benchmark_config,
         )
-        return _workload_results(traces, self.representative_workloads)
+        return _workload_results(
+            traces,
+            self.representative_workloads,
+            self.eval_config,
+        )
 
     def prepare_baseline(
         self,
@@ -128,24 +144,6 @@ class FlashInferAdapter:
             raise ValueError(
                 f"solution targets definition {solution.definition!r}, but "
                 f"the task definition is {self.definition.name!r}"
-            )
-        # The flashinfer-bench solution corpus omits destination_passing_style
-        # and is uniformly value-returning (so is the reference build), but the
-        # BuildSpec default is True — which would wrongly demand out-params and
-        # fail signature validation. Honor an explicit flag; default unset to
-        # value-returning, matching the corpus and reference convention.
-        #
-        # An omitted flag is not wrong here, but it is ambiguous: the same file
-        # means out-params under flashinfer-bench's and SOL's defaults, where the
-        # entry point's return value is discarded. Say so once, at load.
-        if "destination_passing_style" not in solution.spec.model_fields_set:
-            solution.spec.destination_passing_style = False
-            print(
-                f"[warn] {path.name} does not declare destination_passing_style; "
-                "assuming a value-returning entry point. Benchmark frameworks "
-                "default it to out-parameters, so declare it explicitly to keep "
-                "the solution portable.",
-                file=sys.stderr,
             )
         return solution
 
@@ -198,11 +196,10 @@ class FlashInferAdapter:
         return _build_contract_text(spec, self.definition) if spec else None
 
     def task_spec(self) -> TaskSpec:
-        """Map the flashinfer Definition into the neutral TaskSpec, including the
-        run's correctness bar (flashinfer's tolerance is a single global config,
-        so it is a run-level bar, the same for every workload)."""
+        """Map the flashinfer Definition into the neutral TaskSpec, including its
+        correctness bar after FlashInfer resolves bundled op/definition policy."""
         d = self.definition.model_dump(mode="json")
-        cfg = _bench_config()
+        cfg = self.eval_config
         return TaskSpec(
             name=d["name"],
             description=d.get("description") or "",
@@ -322,10 +319,9 @@ def _resolve_build_spec(spec: dict, overrides: dict) -> dict:
 
 # --- Benchmark execution ---
 def _bench_config():
-    """The single benchmark config — its atol/rtol are the correctness gate the
-    run scores against and the diagnostic reports, so the two can't drift."""
+    """Load FlashInfer-Bench's bundled evaluation policy unchanged."""
     from flashinfer_bench.bench import BenchmarkConfig
-    return BenchmarkConfig()
+    return BenchmarkConfig.default()
 
 
 def _run_benchmark(
@@ -333,6 +329,7 @@ def _run_benchmark(
     definition,
     solution,
     workloads: list,
+    benchmark_config,
 ) -> list:
     """Run flashinfer-bench on `solution` against `workloads`. Returns the
     list of resulting Traces. The TraceSet is rooted at TASK_DIR so relative
@@ -351,7 +348,7 @@ def _run_benchmark(
         solutions={definition.name: [solution]},
         workloads={definition.name: workloads},
     )
-    result_set = Benchmark(trace_set, _bench_config()).run_all(dump_traces=False)
+    result_set = Benchmark(trace_set, benchmark_config).run_all(dump_traces=False)
     return result_set.traces.get(definition.name, [])
 
 
@@ -429,7 +426,7 @@ def _archive_dir(workspace: Path) -> Path:
 
 # --- Neutral leaf mapping (one WorkloadResult per trace) ---
 def _workload_results(
-    traces, representative_workloads: dict[str, str]
+    traces, representative_workloads: dict[str, str], eval_config
 ) -> list[WorkloadResult]:
     """Map each flashinfer Trace to a neutral WorkloadResult leaf. Aggregation
     (geomean, representative pick, failure histogram) is shared harness code, not
@@ -444,6 +441,7 @@ def _workload_results(
         _workload_result(
             trace,
             EvaluationStatus,
+            eval_config,
             names_by_uuid.get(str(trace.workload.uuid)),
         )
         for trace in traces
@@ -451,7 +449,7 @@ def _workload_results(
 
 
 def _workload_result(
-    trace, EvaluationStatus, representative_name: str | None = None
+    trace, EvaluationStatus, eval_config, representative_name: str | None = None
 ) -> WorkloadResult:
     passed = trace.evaluation.status == EvaluationStatus.PASSED
     perf = trace.evaluation.performance if passed else None
@@ -469,9 +467,9 @@ def _workload_result(
             if perf and perf.speedup_factor is not None
             else None
         ),
-        tolerance=_tolerance(),
+        tolerance=_tolerance(eval_config),
         correctness=_correctness(trace),
-        diagnostic=None if passed else _workload_diagnostic(trace),
+        diagnostic=None if passed else _workload_diagnostic(trace, eval_config),
         representative_name=representative_name,
     )
 
@@ -494,8 +492,7 @@ def _correctness(trace) -> Correctness | None:
     )
 
 
-def _tolerance() -> Tolerance:
-    cfg = _bench_config()
+def _tolerance(cfg) -> Tolerance:
     return Tolerance(
         max_atol=cfg.atol,
         max_rtol=cfg.rtol,
@@ -537,10 +534,13 @@ def _tensor_field(t: dict) -> TensorField:
 _SKIPPED_RE = re.compile(r"^Solution skipped after \d+ failures?\. Last error:\s*")
 
 
-def _workload_diagnostic(trace) -> str | None:
+def _workload_diagnostic(trace, eval_config) -> str | None:
     # Compose a correctness summary and a filtered log tail into one note.
     parts = []
-    correctness = _correctness_text(getattr(trace.evaluation, "correctness", None))
+    correctness = _correctness_text(
+        getattr(trace.evaluation, "correctness", None),
+        eval_config,
+    )
     if correctness:
         parts.append(correctness)
     log = getattr(trace.evaluation, "log", "") or ""
@@ -557,7 +557,7 @@ def _diagnostic_tail(text: str, status: str) -> str:
     return denoise(unwrapped, compile_error=status == "COMPILE_ERROR")
 
 
-def _correctness_text(correctness) -> str | None:
+def _correctness_text(correctness, cfg) -> str | None:
     if correctness is None:
         return None
     rel = correctness.max_relative_error
@@ -571,7 +571,6 @@ def _correctness_text(correctness) -> str | None:
     # Show each error against its tolerance and the gate: a point fails only
     # when it exceeds both, so the agent can tell a real bug (both exceeded)
     # from benign precision (one within tolerance).
-    cfg = _bench_config()
     return (
         f"max relative error {_metric(rel)} (rtol {_metric(cfg.rtol)}), "
         f"max absolute error {_metric(abs_err)} (atol {_metric(cfg.atol)}); "

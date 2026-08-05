@@ -146,18 +146,6 @@ class SOLAdapter:
                 f"solution targets definition {solution.definition!r}, but "
                 f"the task definition is {self.definition.name!r}"
             )
-        # SOL defaults destination_passing_style to True and then calls
-        # fn(*inputs, *outputs). The solution corpus is uniformly value-returning
-        # and omits the flag, so an unset flag means value-returning here too.
-        if "destination_passing_style" not in solution.spec.model_fields_set:
-            solution.spec.destination_passing_style = False
-            print(
-                f"[warn] {path.name} does not declare destination_passing_style; "
-                "assuming a value-returning entry point. Benchmark frameworks "
-                "default it to out-parameters, so declare it explicitly to keep "
-                "the solution portable.",
-                file=sys.stderr,
-            )
         return solution
 
     def representative_axes(self) -> dict[str, dict[str, int]]:

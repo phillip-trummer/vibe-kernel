@@ -42,7 +42,6 @@ def _translate_spec(spec: dict) -> dict:
 
     # compile_options belongs to SOL's build spec.
     translated.pop("compile_options", None)
-    translated.setdefault("destination_passing_style", False)
     return translated
 
 

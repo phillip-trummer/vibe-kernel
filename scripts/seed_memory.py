@@ -39,7 +39,6 @@ def _prepare_target(
     if solution.get("definition") != definition:
         raise SystemExit(f"Error: {path} targets another task.")
     spec = solution["spec"]
-    spec.setdefault("destination_passing_style", False)
 
     if adapter == "flashinfer" and "language" not in spec:
         languages = spec.pop("languages", [])
