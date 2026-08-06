@@ -440,8 +440,8 @@ def set_finding(
 
 def render_memory(memory: dict) -> str:
     lines = ["# Experiment Memory", ""]
-    lines.extend(_render_header(memory))
     lines.extend(render_task_spec(memory))
+    lines.extend(_render_optimization_state(memory))
     lines.extend(
         _render_current_state(
             memory,
@@ -455,8 +455,8 @@ def render_memory(memory: dict) -> str:
 
 def render_catalog_memory(workspace: Path, memory: dict) -> str:
     lines = ["# Experiment Memory", ""]
-    lines.extend(_render_header(memory))
     lines.extend(render_task_spec(memory))
+    lines.extend(_render_optimization_state(memory))
     lines.extend(_render_current_state(memory, workspace=workspace))
     branch_ids = list_branch_ids(memory)
     lines.extend(_render_branch_collection(memory, branch_ids, full=False))
@@ -523,31 +523,8 @@ def _render_branch_collection(
     return lines
 
 
-def _render_header(memory: dict) -> list[str]:
-    lines = [f"- **Task:** {memory['task']}"]
-    if memory["kernel_description"]:
-        lines.append(f"- **Kernel:** {memory['kernel_description']}")
-    lines.extend(
-        [
-            f"- **Hardware:** {memory['hardware']}",
-            f"- **Language:** {memory['language']}",
-        ]
-    )
-    axes_by_label = memory.get("representative_workload_axes") or {}
-    labels = [
-        label
-        for label in REPRESENTATIVE_WORKLOAD_LABELS
-        if axes_by_label.get(label)
-    ]
-    if labels:
-        lines.append("- **Representative workloads:**")
-        for label in labels:
-            axes = ", ".join(
-                f"{key}={value}" for key, value in axes_by_label[label].items()
-            )
-            lines.append(f"  - {label}: {axes}")
-    lines.append("")
-
+def _render_optimization_state(memory: dict) -> list[str]:
+    lines = ["## Optimization state", ""]
     target_label, target_evaluation = _target(memory)
     if target_label is not None:
         lines.append(
@@ -723,11 +700,34 @@ def _indent(lines: list[str], prefix: str) -> list[str]:
 
 
 def render_task_spec(memory: dict) -> list[str]:
-    """Render the task-specification section used in memory Markdown."""
+    """Render the complete static task context shared by memory and agents."""
     spec = memory.get("task_spec") or {}
-    if not spec:
-        return []
-    lines = ["## Task specification", ""]
+    lines = [
+        "## Task specification",
+        "",
+        f"- **Task:** {memory['task']}",
+    ]
+    if memory["kernel_description"]:
+        lines.append(f"- **Kernel:** {memory['kernel_description']}")
+    lines.extend(
+        [
+            f"- **Hardware:** {memory['hardware']}",
+            f"- **Language:** {memory['language']}",
+        ]
+    )
+    axes_by_label = memory.get("representative_workload_axes") or {}
+    labels = [
+        label
+        for label in REPRESENTATIVE_WORKLOAD_LABELS
+        if axes_by_label.get(label)
+    ]
+    if labels:
+        lines.append("- **Representative workloads:**")
+        for label in labels:
+            axes = ", ".join(
+                f"{key}={value}" for key, value in axes_by_label[label].items()
+            )
+            lines.append(f"  - {label}: {axes}")
     contract = memory.get("build_contract")
     if contract:
         lines.append(f"- **Build contract:** {contract}")

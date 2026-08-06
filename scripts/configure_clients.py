@@ -116,9 +116,13 @@ def configure_clients(
             raise SystemExit(
                 f"Error: could not read workspace task: {exc}"
             ) from exc
-        task_description = "\n".join(_tree.render_task_spec(memory)).rstrip()
-        if task_description:
-            instructions = f"{instructions.rstrip()}\n\n{task_description}\n"
+        task_specification = "\n".join(
+            _tree.render_task_spec(memory)
+        ).rstrip()
+        if task_specification:
+            instructions = (
+                f"{instructions.rstrip()}\n\n{task_specification}\n"
+            )
 
     files = {
         workspace / "AGENTS.md": instructions,
@@ -143,7 +147,7 @@ def configure_clients(
     print("Codex will load the project-scoped kernel-tools MCP server.")
     print(f"Instructions: {template_path.name}")
     if include_task_description:
-        print("Included task description in AGENTS.md")
+        print("Included task specification in AGENTS.md")
     print(f"Allowed tools: {', '.join(tool_names)}")
 
 
@@ -168,7 +172,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--include-task-description",
         action="store_true",
-        help="Append the task specification from experiment memory to AGENTS.md.",
+        help="Append the complete task specification to AGENTS.md.",
     )
     parser.add_argument(
         "--force",
