@@ -10,6 +10,7 @@ uv run python scripts/seed_task.py \
     --data-dir "$data_dir" \
     --task mla_paged_decode_h16_ckv512_kpe64_ps1 \
     --adapter flashinfer \
+    --no-reference-timing \
     --stub cuda \
     --auto-representative-workloads
 

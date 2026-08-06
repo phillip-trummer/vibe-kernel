@@ -208,7 +208,7 @@ def seed_workspace(
     stub: str | None = None,
     representative_workloads: list[str] | None = None,
     auto_representative_workloads: bool = False,
-    measure_reference: bool = True,
+    reference_timing: bool = True,
     force: bool = False,
 ) -> None:
     workspace = workspace.resolve()
@@ -314,7 +314,7 @@ def seed_workspace(
     manifest = {
         "adapter": adapter,
         "hardware": hardware,
-        "measure_reference": measure_reference,
+        "reference_timing": reference_timing,
         "build_spec": solution["spec"],
         "representative_workloads": representatives,
     }
@@ -324,7 +324,7 @@ def seed_workspace(
     print(f"  task: {definition} ({len(workloads)} workloads, {len(blobs)} blobs)")
     print(f"  adapter: {adapter}")
     print(f"  hardware: {hardware}")
-    print(f"  measure reference: {measure_reference}")
+    print(f"  reference timing: {reference_timing}")
     print(f"  starting source: {source_label}")
     languages = solution["spec"].get("languages")
     if not languages:
@@ -364,11 +364,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
     parser.add_argument(
-        "--disable-reference-measurement",
-        action="store_true",
+        "--reference-timing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "Skip reference latency measurement while still running the "
-            "reference for correctness."
+            "Time the reference and report normalized speedup; use "
+            "--no-reference-timing for correctness plus candidate latency only."
         ),
     )
     parser.add_argument("--force", action="store_true")
@@ -404,7 +405,7 @@ def main(argv=None) -> int:
         stub=args.stub,
         representative_workloads=args.representative_workloads,
         auto_representative_workloads=args.auto_representative_workloads,
-        measure_reference=not args.disable_reference_measurement,
+        reference_timing=args.reference_timing,
         force=args.force,
     )
     return 0

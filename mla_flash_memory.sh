@@ -10,6 +10,7 @@ uv run python scripts/seed_task.py \
     --data-dir "$data_dir" \
     --task mla_paged_decode_h16_ckv512_kpe64_ps1 \
     --adapter flashinfer \
+    --no-reference-timing \
     --baseline flashinfer_wrapper_03f7b0 \
     --representative-workloads \
         990b57e3-2975-41a1-be67-ecd1ba020887 \

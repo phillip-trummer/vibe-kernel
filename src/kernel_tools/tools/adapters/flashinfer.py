@@ -66,10 +66,10 @@ class FlashInferAdapter:
         self.workspace = workspace
         self.representative_workloads = representative_workloads
         self.definition, self.workload_traces = _load_task(workspace)
-        self.measure_reference = read_benchmark_manifest(workspace)[
-            "measure_reference"
+        self.reference_timing = read_benchmark_manifest(workspace)[
+            "reference_timing"
         ]
-        self.benchmark_config = _bench_config(self.measure_reference)
+        self.benchmark_config = _bench_config(self.reference_timing)
         self.eval_config = self.benchmark_config.resolve_eval_config(self.definition)
 
     def benchmark(self, scope: str) -> list[WorkloadResult]:
@@ -322,10 +322,10 @@ def _resolve_build_spec(spec: dict, overrides: dict) -> dict:
 
 
 # --- Benchmark execution ---
-def _bench_config(measure_reference: bool = True):
+def _bench_config(reference_timing: bool = True):
     """Load FlashInfer's bundled policy, overriding only reference timing."""
     from flashinfer_bench.bench import BenchmarkConfig
-    return BenchmarkConfig.default(profile_baseline=measure_reference)
+    return BenchmarkConfig.default(profile_baseline=reference_timing)
 
 
 def _run_benchmark(

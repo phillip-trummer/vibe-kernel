@@ -89,8 +89,8 @@ class SOLAdapter:
         self.workspace = workspace
         self.representative_workloads = representative_workloads
         self.definition, self.workloads = _load_task(workspace)
-        self.measure_reference = read_benchmark_manifest(workspace)[
-            "measure_reference"
+        self.reference_timing = read_benchmark_manifest(workspace)[
+            "reference_timing"
         ]
 
     def benchmark(self, scope: str) -> list[WorkloadResult]:
@@ -111,7 +111,7 @@ class SOLAdapter:
             self.definition,
             solution,
             workloads,
-            measure_reference=self.measure_reference,
+            reference_timing=self.reference_timing,
         )
         return self._mark_representatives(workloads, results)
 
@@ -125,7 +125,7 @@ class SOLAdapter:
             self.definition,
             solution,
             self.workloads,
-            measure_reference=self.measure_reference,
+            reference_timing=self.reference_timing,
             archive=False,
         )
         return self._mark_representatives(self.workloads, results)
@@ -470,7 +470,7 @@ def _evaluate(
     definition,
     solution,
     workloads,
-    measure_reference: bool,
+    reference_timing: bool,
     archive: bool = True,
 ) -> list[WorkloadResult]:
     """Drive SOL's packager: stage, compile (C++ only), run the eval driver, parse
@@ -487,7 +487,7 @@ def _evaluate(
             definition=definition,
             workloads=workloads,
             solution=solution,
-            config=BenchmarkConfig(benchmark_reference=measure_reference),
+            config=BenchmarkConfig(benchmark_reference=reference_timing),
             output_dir=Path(staging),
             keep_output_dir=True,  # the context manager owns the directory
         )
