@@ -31,6 +31,7 @@ TOOL_NAMES = (
     "diff_experiment",
     "update_memory",
 )
+MCP_TOOL_TIMEOUT_SECONDS = 3600
 
 
 def configure_clients(
@@ -81,6 +82,7 @@ def configure_clients(
                 "type": "stdio",
                 "command": "uv",
                 "args": ["run", "--project", str(REPO_ROOT), *server_args],
+                "timeout": MCP_TOOL_TIMEOUT_SECONDS * 1000,
             }
         }
     }
@@ -91,7 +93,7 @@ def configure_clients(
         f"args = {json.dumps(['run', *server_args])}\n"
         f"enabled_tools = {json.dumps(list(tool_names))}\n"
         'default_tools_approval_mode = "approve"\n'
-        "tool_timeout_sec = 3600\n"
+        f"tool_timeout_sec = {MCP_TOOL_TIMEOUT_SECONDS}\n"
     )
     permissions = {
         "allow": [f"mcp__kernel-tools__{name}" for name in tool_names],

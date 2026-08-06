@@ -143,6 +143,14 @@ def read_benchmark_manifest(workspace: Path) -> dict:
         raise ValueError(
             f"{manifest_path} must contain an object 'build_spec'"
         )
+    measure_reference = manifest.get("measure_reference", True)
+    if not isinstance(measure_reference, bool):
+        raise ValueError(
+            f"{manifest_path} 'measure_reference' must be a boolean"
+        )
+    # Backward-compatible default for workspaces created before this field was
+    # introduced. Newly seeded manifests always persist the choice explicitly.
+    manifest["measure_reference"] = measure_reference
     representatives = manifest.get("representative_workloads")
     expected_labels = set(REPRESENTATIVE_WORKLOAD_LABELS)
     if (

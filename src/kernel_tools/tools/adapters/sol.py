@@ -46,6 +46,7 @@ from .._workloads import representative_item_for_label, select_representative_wo
 from .._workspace import (
     ARCHIVE_DIR,
     TASK_DIR,
+    read_benchmark_manifest,
     read_build_spec,
     read_src_files,
     solution_name_from_src_files,
@@ -88,6 +89,9 @@ class SOLAdapter:
         self.workspace = workspace
         self.representative_workloads = representative_workloads
         self.definition, self.workloads = _load_task(workspace)
+        self.measure_reference = read_benchmark_manifest(workspace)[
+            "measure_reference"
+        ]
 
     def benchmark(self, scope: str) -> list[WorkloadResult]:
         """Build the current src/ kernel, run it against the workloads (all, or the
@@ -102,7 +106,13 @@ class SOLAdapter:
                 self.representative_workloads,
                 lambda workload: str(workload.uuid),
             )
-        results = _evaluate(self.workspace, self.definition, solution, workloads)
+        results = _evaluate(
+            self.workspace,
+            self.definition,
+            solution,
+            workloads,
+            measure_reference=self.measure_reference,
+        )
         return self._mark_representatives(workloads, results)
 
     def benchmark_target(self, target_path: Path) -> list[WorkloadResult]:
@@ -115,6 +125,7 @@ class SOLAdapter:
             self.definition,
             solution,
             self.workloads,
+            measure_reference=self.measure_reference,
             archive=False,
         )
         return self._mark_representatives(self.workloads, results)
@@ -459,6 +470,7 @@ def _evaluate(
     definition,
     solution,
     workloads,
+    measure_reference: bool,
     archive: bool = True,
 ) -> list[WorkloadResult]:
     """Drive SOL's packager: stage, compile (C++ only), run the eval driver, parse
@@ -475,7 +487,7 @@ def _evaluate(
             definition=definition,
             workloads=workloads,
             solution=solution,
-            config=BenchmarkConfig(benchmark_reference=True),
+            config=BenchmarkConfig(benchmark_reference=measure_reference),
             output_dir=Path(staging),
             keep_output_dir=True,  # the context manager owns the directory
         )
@@ -588,17 +600,24 @@ def _workload_result(trace) -> WorkloadResult:
     evaluation = trace.evaluation
     passed = evaluation.status.value == "PASSED"
     perf = evaluation.performance if passed else None
+    has_reference_timing = bool(
+        perf
+        and perf.reference_latency_ms is not None
+        and perf.reference_latency_ms > 0
+        and perf.speedup_factor is not None
+        and perf.speedup_factor > 0
+    )
     return WorkloadResult(
         axes=dict(trace.workload.axes),
         outcome=normalize_outcome(evaluation.status.value),
         latency_ms=round(perf.latency_ms, 6) if perf else None,
         reference_latency_ms=(
             round(perf.reference_latency_ms, 6)
-            if perf and perf.reference_latency_ms is not None
+            if has_reference_timing
             else None
         ),
         speedup_factor=(
-            round(perf.speedup_factor, 4) if perf and perf.speedup_factor is not None else None
+            round(perf.speedup_factor, 4) if has_reference_timing else None
         ),
         tolerance=_tolerance(trace.workload.tolerance),
         correctness=_correctness(evaluation),

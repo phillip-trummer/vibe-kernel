@@ -24,6 +24,7 @@ from ._torch_build_log import strip_build_noise as _strip_build_noise
 from .._workspace import (
     ARCHIVE_DIR,
     TASK_DIR,
+    read_benchmark_manifest,
     read_build_spec,
     read_src_files,
     solution_name_from_src_files,
@@ -65,7 +66,10 @@ class FlashInferAdapter:
         self.workspace = workspace
         self.representative_workloads = representative_workloads
         self.definition, self.workload_traces = _load_task(workspace)
-        self.benchmark_config = _bench_config()
+        self.measure_reference = read_benchmark_manifest(workspace)[
+            "measure_reference"
+        ]
+        self.benchmark_config = _bench_config(self.measure_reference)
         self.eval_config = self.benchmark_config.resolve_eval_config(self.definition)
 
     def benchmark(self, scope: str) -> list[WorkloadResult]:
@@ -318,10 +322,10 @@ def _resolve_build_spec(spec: dict, overrides: dict) -> dict:
 
 
 # --- Benchmark execution ---
-def _bench_config():
-    """Load FlashInfer-Bench's bundled evaluation policy unchanged."""
+def _bench_config(measure_reference: bool = True):
+    """Load FlashInfer's bundled policy, overriding only reference timing."""
     from flashinfer_bench.bench import BenchmarkConfig
-    return BenchmarkConfig.default()
+    return BenchmarkConfig.default(profile_baseline=measure_reference)
 
 
 def _run_benchmark(
@@ -453,18 +457,25 @@ def _workload_result(
 ) -> WorkloadResult:
     passed = trace.evaluation.status == EvaluationStatus.PASSED
     perf = trace.evaluation.performance if passed else None
+    has_reference_timing = bool(
+        perf
+        and perf.reference_latency_ms is not None
+        and perf.reference_latency_ms > 0
+        and perf.speedup_factor is not None
+        and perf.speedup_factor > 0
+    )
     return WorkloadResult(
         axes=dict(trace.workload.axes),
         outcome=normalize_outcome(trace.evaluation.status.value),
         latency_ms=round(perf.latency_ms, 6) if perf else None,
         reference_latency_ms=(
             round(perf.reference_latency_ms, 6)
-            if perf and perf.reference_latency_ms is not None
+            if has_reference_timing
             else None
         ),
         speedup_factor=(
             round(perf.speedup_factor, 4)
-            if perf and perf.speedup_factor is not None
+            if has_reference_timing
             else None
         ),
         tolerance=_tolerance(eval_config),

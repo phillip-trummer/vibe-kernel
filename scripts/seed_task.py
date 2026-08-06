@@ -208,6 +208,7 @@ def seed_workspace(
     stub: str | None = None,
     representative_workloads: list[str] | None = None,
     auto_representative_workloads: bool = False,
+    measure_reference: bool = True,
     force: bool = False,
 ) -> None:
     workspace = workspace.resolve()
@@ -313,6 +314,7 @@ def seed_workspace(
     manifest = {
         "adapter": adapter,
         "hardware": hardware,
+        "measure_reference": measure_reference,
         "build_spec": solution["spec"],
         "representative_workloads": representatives,
     }
@@ -322,6 +324,7 @@ def seed_workspace(
     print(f"  task: {definition} ({len(workloads)} workloads, {len(blobs)} blobs)")
     print(f"  adapter: {adapter}")
     print(f"  hardware: {hardware}")
+    print(f"  measure reference: {measure_reference}")
     print(f"  starting source: {source_label}")
     languages = solution["spec"].get("languages")
     if not languages:
@@ -360,6 +363,14 @@ def _parse_args(argv=None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    parser.add_argument(
+        "--disable-reference-measurement",
+        action="store_true",
+        help=(
+            "Skip reference latency measurement while still running the "
+            "reference for correctness."
+        ),
+    )
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--list", action="store_true")
     return parser.parse_args(argv)
@@ -393,6 +404,7 @@ def main(argv=None) -> int:
         stub=args.stub,
         representative_workloads=args.representative_workloads,
         auto_representative_workloads=args.auto_representative_workloads,
+        measure_reference=not args.disable_reference_measurement,
         force=args.force,
     )
     return 0
