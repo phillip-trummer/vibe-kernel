@@ -276,6 +276,7 @@ class SOLAdapter:
             self.workspace,
             self.definition,
             workload,
+            reference_dir=staging,
         )
 
     def _build_solution(self):
@@ -380,16 +381,71 @@ def _materialize_inputs(
     definition,
     workload,
     device: str = "cuda:0",
+    reference_dir: Path | None = None,
 ) -> list:
     """Input values in definition order — call the runnable as runnable(*inputs)."""
     from sol_execbench.core.bench.io import gen_inputs, load_safetensors
+
+    custom_inputs_fn = None
+    custom_inputs_entrypoint = getattr(definition, "custom_inputs_entrypoint", None)
+    if custom_inputs_entrypoint is not None:
+        if reference_dir is None:
+            raise RuntimeError(
+                "materializing custom inputs requires a reference module directory"
+            )
+        custom_inputs_fn = _load_reference_entrypoint(
+            definition,
+            custom_inputs_entrypoint,
+            reference_dir,
+        )
 
     safe_tensors = (
         load_safetensors(definition, workload, [workspace / TASK_DIR])
         if any(v.type == "safetensors" for v in workload.inputs.values())
         else None
     )
-    return gen_inputs(definition, workload, device=device, safe_tensors=safe_tensors)
+    return gen_inputs(
+        definition,
+        workload,
+        device=device,
+        safe_tensors=safe_tensors,
+        custom_inputs_fn=custom_inputs_fn,
+    )
+
+
+def _load_reference_entrypoint(
+    definition,
+    entrypoint: str,
+    reference_dir: Path,
+) -> Callable:
+    """Load trusted reference code exactly as SOL's evaluation driver does.
+
+    The source is written to a real file because references may contain
+    decorators (for example ``@triton.jit``) that inspect their source file.
+    Profiling bypasses SOL's evaluation driver to avoid a second CUPTI
+    subscriber, so the adapter must perform this step itself.
+    """
+    import importlib.util
+
+    reference_dir.mkdir(parents=True, exist_ok=True)
+    reference_path = reference_dir / "_profile_reference.py"
+    reference_path.write_text(definition.reference)
+    module_name = f"_profile_reference_{definition.name}"
+    spec = importlib.util.spec_from_file_location(module_name, reference_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load reference module from {reference_path}")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise RuntimeError(f"failed to execute reference code: {exc}") from exc
+
+    fn = getattr(module, entrypoint, None)
+    if not callable(fn):
+        raise RuntimeError(
+            f"reference code does not define callable {entrypoint!r}"
+        )
+    return fn
 
 
 def _build_contract_text(spec: dict, definition) -> str:
