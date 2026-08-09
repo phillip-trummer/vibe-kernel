@@ -209,6 +209,7 @@ def seed_workspace(
     representative_workloads: list[str] | None = None,
     auto_representative_workloads: bool = False,
     reference_timing: bool = True,
+    include_dirs: list[Path] | None = None,
     force: bool = False,
 ) -> None:
     workspace = workspace.resolve()
@@ -229,6 +230,8 @@ def seed_workspace(
             "Error: provide --representative-workloads SMALL MEDIUM LARGE "
             "XLARGE or pass --auto-representative-workloads."
         )
+    if include_dirs and adapter != "sol":
+        raise SystemExit("Error: --include-dir is currently supported only by SOL.")
 
     definition_path = _definitions(data_dir).get(definition)
     if definition_path is None:
@@ -281,6 +284,14 @@ def seed_workspace(
         source_label = solution_path.stem
 
     solution["spec"]["target_hardware"] = [build_hardware]
+    if include_dirs:
+        compile_options = solution["spec"].setdefault("compile_options", {})
+        include_flags = [f"-I{path.expanduser().resolve()}" for path in include_dirs]
+        for key in ("cflags", "cuda_cflags"):
+            compile_options[key] = [
+                *compile_options.get(key, []),
+                *include_flags,
+            ]
 
     generated = (workspace / "task", workspace / "src")
     if any(path.exists() or path.is_symlink() for path in generated) and not force:
@@ -372,6 +383,16 @@ def _parse_args(argv=None) -> argparse.Namespace:
             "--no-reference-timing for correctness plus candidate latency only."
         ),
     )
+    parser.add_argument(
+        "--include-dir",
+        action="append",
+        type=Path,
+        default=[],
+        help=(
+            "Add an include directory to both C++ and CUDA compiler flags; "
+            "repeatable. Paths are resolved before being stored in benchmark.json."
+        ),
+    )
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--list", action="store_true")
     return parser.parse_args(argv)
@@ -406,6 +427,7 @@ def main(argv=None) -> int:
         representative_workloads=args.representative_workloads,
         auto_representative_workloads=args.auto_representative_workloads,
         reference_timing=args.reference_timing,
+        include_dirs=args.include_dir,
         force=args.force,
     )
     return 0

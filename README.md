@@ -60,6 +60,22 @@ bash mla_flash_memory.sh .runs/my_run
 
 For a SOL workspace, use `mla_sol_stub.sh`.
 
+The minimal cuCollections build-and-probe experiment uses SOL and starts from a
+working `cuco::static_set` baseline. Its 14 synthetic workloads vary relation
+size, distinct-key count, lookup hit rate, and uniform versus Zipfian key
+frequency. Input generation is outside the timed region. Install the
+header-only dependency and keep its checkout under `.deps/`:
+
+```bash
+git clone https://github.com/NVIDIA/cuCollections.git .deps/cuCollections
+```
+
+Then create the workspace:
+
+```bash
+bash cuco_static_set_sol.sh .runs/my_cuco_run
+```
+
 The scripts seed and validate the workspace, add shared agent instructions, and
 configure Claude Code. Use a new output path for each run.
 

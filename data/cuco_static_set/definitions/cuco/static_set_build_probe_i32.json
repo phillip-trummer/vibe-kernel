@@ -1,0 +1,54 @@
+{
+  "name": "static_set_build_probe_i32",
+  "description": "Build a cuCollections-style static set from an int32 build relation, then test probe-key membership across database-state distributions. Candidate latency is GPU build+probe activity; input generation, host allocation, and wrapper latency are excluded.",
+  "op_type": "hash_membership",
+  "axes": {
+    "build_size": {
+      "type": "var",
+      "description": "Number of rows in the build relation, including duplicate keys."
+    },
+    "unique_keys": {
+      "type": "var",
+      "description": "Exact number of distinct keys in the build relation."
+    },
+    "probe_size": {
+      "type": "var",
+      "description": "Number of membership queries."
+    },
+    "hit_rate_percent": {
+      "type": "var",
+      "description": "Exact percentage of probes whose keys occur in the build relation, rounded down to a whole probe count."
+    },
+    "zipf_alpha_milli": {
+      "type": "var",
+      "description": "Key-frequency skew: 0 is uniform and, for example, 1250 means Zipf alpha 1.25."
+    }
+  },
+  "custom_inputs_entrypoint": "generate_inputs",
+  "inputs": {
+    "build_keys": {
+      "shape": [
+        "build_size"
+      ],
+      "dtype": "int32",
+      "description": "Build-relation keys with the requested cardinality and skew; INT32_MIN is reserved as the empty-key sentinel."
+    },
+    "probe_keys": {
+      "shape": [
+        "probe_size"
+      ],
+      "dtype": "int32",
+      "description": "Probe keys with the requested membership hit rate and skew."
+    }
+  },
+  "outputs": {
+    "present": {
+      "shape": [
+        "probe_size"
+      ],
+      "dtype": "bool",
+      "description": "Whether each probe key occurs in build_keys."
+    }
+  },
+  "reference": "import torch\n\n\ndef _key_sequence(start, count, device):\n    # An affine permutation modulo 2**31 gives distinct, non-sentinel int32 keys.\n    indices = torch.arange(start, start + count, dtype=torch.int64, device=device)\n    return ((indices * 1_103_515_245 + 12_345) & 0x7FFF_FFFF).to(torch.int32)\n\n\ndef _sample_indices(num_keys, count, zipf_alpha_milli, device):\n    if count == 0:\n        return torch.empty(0, dtype=torch.int64, device=device)\n    if zipf_alpha_milli == 0:\n        return torch.randint(0, num_keys, (count,), device=device)\n    alpha = zipf_alpha_milli / 1000.0\n    ranks = torch.arange(1, num_keys + 1, dtype=torch.float32, device=device)\n    weights = ranks.pow(-alpha)\n    return torch.multinomial(weights, count, replacement=True)\n\n\ndef generate_inputs(axes_and_scalars, device):\n    build_size = axes_and_scalars['build_size']\n    unique_keys = axes_and_scalars['unique_keys']\n    probe_size = axes_and_scalars['probe_size']\n    hit_rate_percent = axes_and_scalars['hit_rate_percent']\n    zipf_alpha_milli = axes_and_scalars['zipf_alpha_milli']\n\n    if not 0 < unique_keys <= build_size:\n        raise ValueError('unique_keys must be in [1, build_size]')\n    if not 0 <= hit_rate_percent <= 100:\n        raise ValueError('hit_rate_percent must be in [0, 100]')\n    if zipf_alpha_milli < 0:\n        raise ValueError('zipf_alpha_milli must be non-negative')\n\n    key_universe = _key_sequence(0, unique_keys, device)\n    extra_count = build_size - unique_keys\n    if zipf_alpha_milli == 0:\n        extra_indices = torch.arange(extra_count, dtype=torch.int64, device=device) % unique_keys\n    else:\n        extra_indices = _sample_indices(\n            unique_keys, extra_count, zipf_alpha_milli, device\n        )\n    build_keys = torch.cat((key_universe, key_universe[extra_indices]))\n    build_keys = build_keys[torch.randperm(build_size, device=device)]\n\n    num_hits = probe_size * hit_rate_percent // 100\n    hit_indices = _sample_indices(\n        unique_keys, num_hits, zipf_alpha_milli, device\n    )\n    hits = key_universe[hit_indices]\n    misses = _key_sequence(unique_keys, probe_size - num_hits, device)\n    probe_keys = torch.cat((hits, misses))\n    probe_keys = probe_keys[torch.randperm(probe_size, device=device)]\n    return {'build_keys': build_keys, 'probe_keys': probe_keys}\n\n\n@torch.no_grad()\ndef run(build_keys, probe_keys):\n    return torch.isin(probe_keys, build_keys)\n"
+}
