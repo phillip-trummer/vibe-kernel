@@ -93,7 +93,9 @@ class BenchmarkAdapter(Protocol):
 
     def build_profilable(self, label: str) -> tuple[Callable, list]:
         """Build the current kernel and materialize one representative workload's
-        inputs. Returns (runnable, inputs); call runnable(*inputs)."""
+        complete call arguments. Destination-passing kernels include preallocated
+        outputs after their inputs. Returns (runnable, arguments); call
+        runnable(*arguments)."""
         ...
 
 

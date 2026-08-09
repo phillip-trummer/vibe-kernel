@@ -253,7 +253,8 @@ class SOLAdapter:
 
     def build_profilable(self, label: str) -> tuple[Callable, list]:
         """Build the current kernel and materialize one representative workload's
-        inputs. Returns (runnable, inputs); call runnable(*inputs).
+        complete call arguments. Returns (runnable, arguments); call
+        runnable(*arguments).
 
         Loads the compiled artifact directly rather than running SOL's evaluator:
         that keeps CUPTI — SOL's timer — out of the profiled process. A profiler
@@ -272,12 +273,19 @@ class SOLAdapter:
             solution,
             [workload],
         )
-        return _load_runnable(solution, staging), _materialize_inputs(
+        inputs = _materialize_inputs(
             self.workspace,
             self.definition,
             workload,
             reference_dir=staging,
         )
+        arguments = _profile_arguments(
+            self.definition,
+            workload,
+            inputs,
+            destination_passing_style=solution.spec.destination_passing_style,
+        )
+        return _load_runnable(solution, staging), arguments
 
     def _build_solution(self):
         files = read_src_files(self.workspace)
@@ -411,6 +419,24 @@ def _materialize_inputs(
         safe_tensors=safe_tensors,
         custom_inputs_fn=custom_inputs_fn,
     )
+
+
+def _profile_arguments(
+    definition,
+    workload,
+    inputs: list,
+    destination_passing_style: bool,
+    device: str = "cuda:0",
+) -> list:
+    """Complete a profiler invocation with outputs allocated outside NCU."""
+    if not destination_passing_style:
+        return inputs
+
+    from sol_execbench.core.bench.io import allocate_outputs
+
+    resolved_axes = definition.get_resolved_axes_values(workload.axes)
+    outputs = allocate_outputs(definition, resolved_axes, device)
+    return [*inputs, *outputs]
 
 
 def _load_reference_entrypoint(

@@ -233,16 +233,23 @@ class FlashInferAdapter:
 
     def build_profilable(self, label: str) -> tuple[Callable, list]:
         """Build the current src/ kernel and materialize one representative
-        workload's inputs. Returns (runnable, inputs); call runnable(*inputs)."""
+        workload's complete call arguments. Returns (runnable, arguments); call
+        runnable(*arguments)."""
         workload = representative_item_for_label(
             self.workload_traces,
             label,
             self.representative_workloads,
             lambda trace: str(trace.workload.uuid),
         ).workload
-        runnable = _build_runnable(self.definition, self._build_solution())
+        solution = self._build_solution()
+        runnable = _build_runnable(self.definition, solution)
         inputs = _materialize_inputs(self.workspace, self.definition, workload)
-        return runnable, inputs
+        arguments = _profile_arguments(
+            self.definition,
+            inputs,
+            destination_passing_style=solution.spec.destination_passing_style,
+        )
+        return runnable, arguments
 
     def _build_solution(self):
         return _build_solution_from_src(self.workspace, self.definition.name)
@@ -392,6 +399,22 @@ def _materialize_inputs(
         else None
     )
     return gen_inputs(definition, workload, device=device, safe_tensors=safe_tensors)
+
+
+def _profile_arguments(
+    definition,
+    inputs: list,
+    destination_passing_style: bool,
+    device: str = "cuda:0",
+) -> list:
+    """Complete a profiler invocation with outputs allocated outside NCU."""
+    if not destination_passing_style:
+        return inputs
+
+    from flashinfer_bench.bench.evaluators.utils import allocate_outputs
+
+    outputs = allocate_outputs(definition, inputs, device)
+    return [*inputs, *outputs]
 
 
 # --- Archive I/O (archive/solutions.jsonl + archive/traces.jsonl) ---

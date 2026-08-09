@@ -196,21 +196,22 @@ def _tail_cap(text: str, limit: int) -> str:
 def _run_under_ncu(workspace: Path, representative_workload: str) -> None:
     import torch
 
-    # Build the kernel + materialize the chosen representative workload's inputs.
+    # Build the kernel + materialize the chosen representative workload's complete
+    # call arguments (inputs followed by outputs for destination-passing kernels).
     # Same kernel identity as benchmark_kernel, so the adapter's build cache is shared.
-    runnable, inputs = get_adapter(workspace).build_profilable(
+    runnable, arguments = get_adapter(workspace).build_profilable(
         representative_workload
     )
 
     with torch.no_grad():
         # Warm up outside the profiled region.
         for _ in range(_WARMUP_ITERS):
-            runnable(*inputs)
+            runnable(*arguments)
         torch.cuda.synchronize()
 
         # Profile.
         torch.cuda.profiler.start()
         for _ in range(_PROFILE_ITERS):
-            runnable(*inputs)
+            runnable(*arguments)
         torch.cuda.synchronize()
         torch.cuda.profiler.stop()
