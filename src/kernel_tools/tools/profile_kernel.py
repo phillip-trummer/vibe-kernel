@@ -78,6 +78,9 @@ def profile_kernel(
     representative_workload: str | None = None,
     ncu_args: list[str] | None = None,
 ) -> str:
+    # The profiler child runs with cwd=workspace. Pass it an absolute path so a
+    # direct caller may safely supply a relative workspace path.
+    workspace = workspace.resolve()
     if shutil.which("ncu") is None:
         return "Error: ncu (Nsight Compute) not found on PATH"
 
