@@ -11,8 +11,8 @@ Agent tools for GPU kernel optimization using Claude Code or Codex.
 | --- | --- |
 | `read_source` | Read a kernel source file. |
 | `edit_source`, `write_source` | Modify a kernel source file. |
-| `benchmark_kernel` | Build, validate, and benchmark the kernel. |
-| `profile_kernel` | Profile the current implementation on a representative workload with Nsight Compute. |
+| `benchmark_kernel` | Build, validate, and time the kernel. |
+| `profile_kernel` | Profile the kernel on a representative workload with Nsight Compute. |
 
 Supported benchmark backends:
 
@@ -21,12 +21,12 @@ Supported benchmark backends:
 
 ### Memory tools
 
-Kernel optimization is iterative and the search space is deep enough that no single clever edit wins. The optional memory tools preserve that evidence across sessions so later attempts can build on earlier work.
+Kernel optimization is iterative and the search space is deep enough that no single clever edit wins. The optional memory tools allow the agent to preserve experiments across sessions so later attempts can build on earlier work.
 
 | Tool | Purpose |
 | --- | --- |
 | `read_memory`, `update_memory` | Read and maintain durable findings, hazards, and hypotheses. |
-| `create_branch`, `log_experiment` | Organize and record measured variants. |
+| `create_branch`, `log_experiment` | Organize and record kernel variants. |
 | `checkout_experiment`, `diff_experiment` | Restore or compare recorded experiments. |
 
 ## Quick start
@@ -49,35 +49,18 @@ The repository includes example data and setup scripts. Choose one:
 
 ```bash
 # Start with an empty CUDA scaffold and only the kernel tools
-bash mla_flash_stub.sh .runs/my_run
+bash mla_sol_stub.sh .runs/my_run
 ```
 ```bash
-# Start from a FlashInfer baseline 
-# (the baseline determines the kernel language and build spec) 
+# Use the flashinfer benchmarking backend 
+# starting from an exisiting python solution
 # with experiment memory enabled
+# and disabled reference timing
 bash mla_flash_memory.sh .runs/my_run
 ```
 
-For a SOL workspace, use `mla_sol_stub.sh`.
-
-The minimal cuCollections build-and-probe experiment uses SOL and starts from a
-working `cuco::static_set` baseline. Its 14 synthetic workloads vary relation
-size, distinct-key count, lookup hit rate, and uniform versus Zipfian key
-frequency. Input generation is outside the timed region. Install the
-header-only dependency and keep its checkout under `.deps/`:
-
-```bash
-git clone https://github.com/NVIDIA/cuCollections.git .deps/cuCollections
-```
-
-Then create the workspace:
-
-```bash
-bash cuco_static_set_sol.sh .runs/my_cuco_run
-```
-
 The scripts seed and validate the workspace, add shared agent instructions, and
-configure Claude Code. Use a new output path for each run.
+configure Claude Code & Codex.
 
 To use another task from the
 [`flashinfer-trace`](https://huggingface.co/datasets/flashinfer-ai/flashinfer-trace)
@@ -90,18 +73,12 @@ uv run python scripts/seed_task.py --list
 
 ### Start an agent
 
-Claude Code reads the generated project configuration automatically:
+Claude Code & Codex read the generated project configuration automatically:
 
 ```bash
 cd .runs/my_run
 claude
-```
-
-Codex also reads the generated project configuration automatically:
-
-```bash
-cd .runs/my_run
-codex
+# codex
 ```
 
 ## Workspace layout
