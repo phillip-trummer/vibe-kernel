@@ -4,14 +4,15 @@ set -euo pipefail
 workspace_path="${1:-.runs/my_run}"
 data_dir="${VIBE_KERNEL_DATA_DIR:-data/mla_paged}"
 
-# Create task/, benchmark.json, and an unimplemented CUDA scaffold under src/.
+# Create task/, benchmark.json, and seed src/ with the selected starting kernel.
+# The starting kernel determines the language and build spec for the run. 
 uv run python scripts/seed_task.py \
     --workspace "$workspace_path" \
     --data-dir "$data_dir" \
     --task mla_paged_decode_h16_ckv512_kpe64_ps1 \
     --adapter flashinfer \
     --no-reference-timing \
-    --stub cuda \
+    --starting-kernel gpt-5_triton_a41cd4 \
     --representative-workloads \
         990b57e3-2975-41a1-be67-ecd1ba020887 \
         787d2d2f-548c-46ab-9ded-55fd30b1de20 \
@@ -23,7 +24,8 @@ uv run python scripts/validate_workspace.py --workspace "$workspace_path"
 # Benchmark and pin the target before the run starts.
 uv run python scripts/seed_memory.py \
     --workspace "$workspace_path" \
-    --target "$data_dir/solutions/baseline/mla_paged/mla_paged_decode_h16_ckv512_kpe64_ps1/flashinfer_wrapper_03f7b0.json"
+    --target "$data_dir/solutions/baseline/mla_paged/mla_paged_decode_h16_ckv512_kpe64_ps1/flashinfer_wrapper_03f7b0.json" \
+    --record-starting-kernel
 
 # Add shared instructions, Claude Code permissions, and project MCP config.
 uv run python scripts/configure_clients.py \

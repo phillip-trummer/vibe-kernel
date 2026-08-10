@@ -11,7 +11,7 @@ uv run python scripts/seed_task.py \
     --data-dir "$data_dir" \
     --task static_set_build_probe_i32 \
     --adapter sol \
-    --baseline cuco_static_set_sol \
+    --starting-kernel cuco_static_set_sol \
     --include-dir "$cuco_dir/include" \
     --no-reference-timing \
     --representative-workloads \

@@ -52,12 +52,14 @@ The repository includes example data and setup scripts. Choose one:
 bash mla_sol_stub.sh .runs/my_run
 ```
 ```bash
-# Use the flashinfer benchmarking backend 
-# starting from an exisiting python solution
+# Use the flashinfer benchmarking backend
+# starting from an existing Triton solution
 # with experiment memory enabled
-# and disabled reference timing
-bash mla_flash_memory.sh .runs/my_run
+# and reference timing disabled
+bash mla_flash_triton_memory.sh .runs/my_run
 ```
+
+These examples deliberately vary the backend, starting kernel, language, workload selection, reference timing, and memory configuration. Mix these options as needed.
 
 The scripts seed and validate the workspace, add shared agent instructions, and
 configure Claude Code & Codex.

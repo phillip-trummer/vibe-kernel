@@ -54,24 +54,15 @@ class BenchmarkAdapter(Protocol):
         """The neutral task description stored when memory is initialized."""
         ...
 
-    def prepare_baseline(
+    def prepare_starting_kernel(
         self,
-        baseline_path: Path,
+        starting_kernel_path: Path,
         build_spec_overrides: dict | None = None,
     ) -> tuple[list[tuple[str, str]], dict]:
-        """The user's starting kernel at baseline_path (in this adapter's native
-        format), returned as working-kernel source files plus the resolved native
-        build spec. Setup persists the pair into ``src/`` and
+        """The user's starting kernel at starting_kernel_path (in this adapter's
+        native format), returned as working-kernel source files plus the resolved
+        native build spec. Setup persists the pair into ``src/`` and
         ``task/benchmark.json``; the adapter never writes workspace state."""
-        ...
-
-    def prepare_reference_baseline(
-        self,
-        build_spec_overrides: dict | None = None,
-    ) -> tuple[list[tuple[str, str]], dict] | None:
-        """The task's reference packaged as working-kernel source files (name,
-        content) plus its resolved native build spec, or None if the task has no
-        runnable reference. Setup uses this when [task] baseline = 'reference'."""
         ...
 
     def build_contract(self) -> str | None:
@@ -106,7 +97,7 @@ def get_adapter(
     """Construct the adapter selected by ``task/benchmark.json``.
 
     Setup may pass an in-memory partial manifest before it has resolved the
-    baseline build spec. Runtime callers always use the persisted manifest.
+    starting-kernel build spec. Runtime callers always use the persisted manifest.
     """
     manifest = (
         manifest if manifest is not None else read_benchmark_manifest(workspace)

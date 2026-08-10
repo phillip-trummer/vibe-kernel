@@ -6,7 +6,7 @@
         --adapter sol \
         --stub cuda
 
-The command does not create .state/ or keep copies of baseline solutions.
+The command does not create .state/ or keep copies of starting-kernel solutions.
 """
 from __future__ import annotations
 
@@ -204,7 +204,7 @@ def seed_workspace(
     definition: str,
     adapter: str,
     data_dir: Path = DATA_DIR,
-    baseline: str | None = None,
+    starting_kernel: str | None = None,
     stub: str | None = None,
     representative_workloads: list[str] | None = None,
     auto_representative_workloads: bool = False,
@@ -216,10 +216,12 @@ def seed_workspace(
     data_dir = data_dir.resolve()
     if workspace == REPO_ROOT or workspace.parent == workspace:
         raise SystemExit("Error: choose a dedicated workspace directory.")
-    if baseline is None and stub is None:
-        raise SystemExit("Error: choose --baseline or --stub.")
-    if baseline is not None and stub is not None:
-        raise SystemExit("Error: --baseline and --stub are mutually exclusive.")
+    if starting_kernel is None and stub is None:
+        raise SystemExit("Error: choose --starting-kernel or --stub.")
+    if starting_kernel is not None and stub is not None:
+        raise SystemExit(
+            "Error: --starting-kernel and --stub are mutually exclusive."
+        )
     if representative_workloads is not None and auto_representative_workloads:
         raise SystemExit(
             "Error: choose explicit representative workloads or automatic "
@@ -277,11 +279,15 @@ def seed_workspace(
             build_hardware,
             language=stub,
         )
-        source_label = f"generated {stub} stub"
+        starting_kernel_label = f"generated {stub} stub"
     else:
-        solution_path = _resolve_solution(data_dir, definition, baseline or "")
+        solution_path = _resolve_solution(
+            data_dir,
+            definition,
+            starting_kernel or "",
+        )
         solution = _load_solution(solution_path, definition, adapter)
-        source_label = solution_path.stem
+        starting_kernel_label = solution_path.stem
 
     solution["spec"]["target_hardware"] = [build_hardware]
     if include_dirs:
@@ -336,7 +342,7 @@ def seed_workspace(
     print(f"  adapter: {adapter}")
     print(f"  hardware: {hardware}")
     print(f"  reference timing: {reference_timing}")
-    print(f"  starting source: {source_label}")
+    print(f"  starting kernel: {starting_kernel_label}")
     languages = solution["spec"].get("languages")
     if not languages:
         language = solution["spec"].get("language")
@@ -347,23 +353,45 @@ def seed_workspace(
 
 
 def _parse_args(argv=None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", type=Path)
-    parser.add_argument("--task")
-    parser.add_argument("--adapter", choices=("flashinfer", "sol"))
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        help="Workspace directory to create or reset.",
+    )
+    parser.add_argument(
+        "--task",
+        help="Task definition name from DATA_DIR/definitions/.",
+    )
+    parser.add_argument(
+        "--adapter",
+        choices=("flashinfer", "sol"),
+        help="Benchmark backend and native solution format for the workspace.",
+    )
     start = parser.add_mutually_exclusive_group()
-    start.add_argument("--baseline")
+    start.add_argument(
+        "--starting-kernel",
+        metavar="SOLUTION",
+        help=(
+            "Copy the named existing solution into src/ as the kernel to start "
+            "from; this does not benchmark or record it."
+        ),
+    )
     start.add_argument(
         "--stub",
         choices=STUB_LANGUAGES,
         metavar="LANGUAGE",
-        help="Generate a cuda, python, or triton scaffold.",
+        help="Populate src/ with a generated cuda, python, or triton scaffold.",
     )
     representatives = parser.add_mutually_exclusive_group()
     representatives.add_argument(
         "--representative-workloads",
         nargs=4,
         metavar=("SMALL", "MEDIUM", "LARGE", "XLARGE"),
+        help="Four workload UUIDs used for representative benchmark reporting.",
     )
     representatives.add_argument(
         "--auto-representative-workloads",
@@ -373,7 +401,15 @@ def _parse_args(argv=None) -> argparse.Namespace:
             "item from each of four contiguous strata."
         ),
     )
-    parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=DATA_DIR,
+        help=(
+            "Dataset root containing definitions/, workloads/, and solutions/ "
+            f"(default: {DATA_DIR})."
+        ),
+    )
     parser.add_argument(
         "--reference-timing",
         action=argparse.BooleanOptionalAction,
@@ -393,8 +429,16 @@ def _parse_args(argv=None) -> argparse.Namespace:
             "repeatable. Paths are resolved before being stored in benchmark.json."
         ),
     )
-    parser.add_argument("--force", action="store_true")
-    parser.add_argument("--list", action="store_true")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Reset generated task, source, experiment, archive, and memory state.",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List task definition names in --data-dir and exit.",
+    )
     return parser.parse_args(argv)
 
 
@@ -422,7 +466,7 @@ def main(argv=None) -> int:
         definition=args.task,
         adapter=args.adapter,
         data_dir=args.data_dir,
-        baseline=args.baseline,
+        starting_kernel=args.starting_kernel,
         stub=args.stub,
         representative_workloads=args.representative_workloads,
         auto_representative_workloads=args.auto_representative_workloads,

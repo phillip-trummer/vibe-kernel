@@ -42,7 +42,10 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--binding", default="torch", choices=["torch", "tvm-ffi"], help="Binding (default: torch).")
     parser.add_argument("--author", default="user", help="Solution author (default: user).")
-    parser.add_argument("--name", help="Solution name (default: '<definition>_baseline').")
+    parser.add_argument(
+        "--name",
+        help="Solution name (default: '<definition>_starting_kernel').",
+    )
     parser.add_argument(
         "--hardware", action="append", default=[], metavar="NAME",
         help="Target hardware label; repeatable. Defaults to the local CUDA device.",
@@ -72,7 +75,7 @@ def _build_solution(args: argparse.Namespace, sources: list[tuple[str, str]]):
 
     entry = args.entry or f"{ENTRY_FILE_BY_LANGUAGE.get(args.language, 'main.py')}::{ENTRY_SYMBOL}"
     return Solution(
-        name=args.name or f"{args.definition}_baseline",
+        name=args.name or f"{args.definition}_starting_kernel",
         definition=args.definition,
         author=args.author,
         spec=BuildSpec(

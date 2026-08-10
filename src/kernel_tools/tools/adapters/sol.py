@@ -53,11 +53,7 @@ from .._workspace import (
 )
 
 
-# --- Build-spec defaults (Solution construction) ---
-# SOL's entry_point is "<file>::<symbol>". cuda_cpp compiles main.cpp (kernel.cu/.h
-# are included); pytorch and triton import main.py.
-ENTRY_FILE_BY_LANGUAGE = {"cuda_cpp": "main.cpp", "pytorch": "main.py", "triton": "main.py"}
-ENTRY_SYMBOL = "run"
+# --- Solution construction ---
 AUTHOR = "agent"
 
 # SOL's packager compiles these through torch's cpp_extension; the rest are imported.
@@ -130,13 +126,13 @@ class SOLAdapter:
         )
         return self._mark_representatives(self.workloads, results)
 
-    def prepare_baseline(
+    def prepare_starting_kernel(
         self,
-        baseline_path: Path,
+        starting_kernel_path: Path,
         build_spec_overrides: dict | None = None,
     ) -> tuple[list[tuple[str, str]], dict]:
-        """Load a baseline and return its sources plus resolved native spec."""
-        solution = self._load_solution_file(baseline_path)
+        """Load a starting kernel and return its sources plus resolved native spec."""
+        solution = self._load_solution_file(starting_kernel_path)
         files = [(s.path, s.content) for s in solution.sources]
         spec = _resolve_build_spec(
             solution.spec.model_dump(mode="json"),
@@ -178,33 +174,6 @@ class SOLAdapter:
         for workload, result in zip(workloads, results):
             result.representative_name = names_by_uuid.get(str(workload.uuid))
         return results
-
-    def prepare_reference_baseline(
-        self,
-        build_spec_overrides: dict | None = None,
-    ) -> tuple[list[tuple[str, str]], dict] | None:
-        """Package the task's reference and its resolved native build spec."""
-        from sol_execbench import BuildSpec, SupportedBindings
-
-        reference = (getattr(self.definition, "reference", "") or "").strip()
-        if not reference:
-            return None
-        content = reference.replace("\r\n", "\n").replace("\r", "\n") + "\n"
-        entry_file = ENTRY_FILE_BY_LANGUAGE["pytorch"]
-        base_spec = BuildSpec(
-            languages=["pytorch"],
-            target_hardware=["LOCAL"],
-            entry_point=f"{entry_file}::{ENTRY_SYMBOL}",
-            binding=SupportedBindings.TORCH,
-            destination_passing_style=False,
-        )
-        files = [(entry_file, content)]
-        spec = _resolve_build_spec(
-            base_spec.model_dump(mode="json"),
-            build_spec_overrides or {},
-        )
-        _solution_with_spec(self.definition.name, files, spec)
-        return files, spec
 
     def build_contract(self) -> str | None:
         spec = read_build_spec(self.workspace)

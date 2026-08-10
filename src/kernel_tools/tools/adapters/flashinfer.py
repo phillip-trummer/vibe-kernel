@@ -44,19 +44,14 @@ from .._evaluation import (
 )
 
 
-# --- Build-spec defaults (Solution construction) ---
-# flashinfer entry_point is "<file>::<symbol>". The host entry file follows the
-# kernel's language: cuda compiles main.cpp (kernel.cu/.h are included); python
-# and triton import main.py. The symbol (run) is the same across languages.
-ENTRY_FILE_BY_LANGUAGE = {"cuda": "main.cpp", "python": "main.py", "triton": "main.py"}
-ENTRY_SYMBOL = "run"
+# --- Solution construction ---
 AUTHOR = "agent"
 
 
 class FlashInferAdapter:
     """Loads the task fixtures once, then exposes only neutral results — native
     flashinfer types never leave this class. The kernel's source language comes
-    from the baseline's frozen build spec, not config."""
+    from the starting kernel's frozen build spec, not config."""
 
     def __init__(
         self,
@@ -118,13 +113,13 @@ class FlashInferAdapter:
             self.eval_config,
         )
 
-    def prepare_baseline(
+    def prepare_starting_kernel(
         self,
-        baseline_path: Path,
+        starting_kernel_path: Path,
         build_spec_overrides: dict | None = None,
     ) -> tuple[list[tuple[str, str]], dict]:
-        """Load a baseline and return its sources plus resolved native spec."""
-        solution = self._load_solution_file(baseline_path)
+        """Load a starting kernel and return its sources plus resolved native spec."""
+        solution = self._load_solution_file(starting_kernel_path)
         files = [(s.path, s.content) for s in solution.sources]
         spec = _resolve_build_spec(
             solution.spec.model_dump(mode="json"),
@@ -162,34 +157,6 @@ class FlashInferAdapter:
             lambda trace: str(trace.workload.uuid),
         )
         return {label: dict(t.workload.axes) for label, t in zip(labels, selected)}
-
-    def prepare_reference_baseline(
-        self,
-        build_spec_overrides: dict | None = None,
-    ) -> tuple[list[tuple[str, str]], dict] | None:
-        """Package the task's reference and its resolved native build spec."""
-        import torch
-        from flashinfer_bench.data import BuildSpec, SupportedBindings
-
-        reference = (getattr(self.definition, "reference", "") or "").strip()
-        if not reference:
-            return None
-        content = reference.replace("\r\n", "\n").replace("\r", "\n") + "\n"
-        entry_file = ENTRY_FILE_BY_LANGUAGE["python"]
-        base_spec = BuildSpec(
-            language="python",
-            target_hardware=[torch.cuda.get_device_name(0).replace(" ", "_")],
-            entry_point=f"{entry_file}::{ENTRY_SYMBOL}",
-            binding=SupportedBindings.TORCH,
-            destination_passing_style=False,
-        )
-        files = [(entry_file, content)]
-        spec = _resolve_build_spec(
-            base_spec.model_dump(mode="json"),
-            build_spec_overrides or {},
-        )
-        _solution_with_spec(self.definition.name, files, spec)
-        return files, spec
 
     def build_contract(self) -> str | None:
         """One agent-facing sentence stating the fixed build contract the working
@@ -306,7 +273,7 @@ def _build_solution_from_src(workspace: Path, definition_name: str):
 
 def _solution_with_spec(definition_name: str, files: list[tuple[str, str]], spec: dict):
     """Build a flashinfer Solution from (name, content) source pairs and a frozen
-    build spec dict (the baseline's own spec, governing the whole run)."""
+    build spec dict (the starting kernel's own spec, governing the whole run)."""
     from flashinfer_bench.data import BuildSpec, Solution, SourceFile
 
     return Solution(

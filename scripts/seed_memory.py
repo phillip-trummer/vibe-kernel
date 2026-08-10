@@ -1,13 +1,13 @@
-"""Initialize memory with an optional target and/or baseline experiment.
+"""Initialize memory with an optional target and/or starting-kernel experiment.
 
 This is not required to create or run a workspace. Run it before starting an
-experiment to pin a comparison target, record the current src/ as the baseline,
-or both. It refuses to replace existing memory.
+experiment to pin a comparison target, record the current src/ as the starting
+kernel, or both. It refuses to replace existing memory.
 
     uv run python scripts/seed_memory.py \
         --workspace .runs/mla-flash \
         --target data/flashinfer-trace/solutions/vibe-kernel/opus4.8-25-07_flashinfer.json \
-        --baseline
+        --record-starting-kernel
 """
 from __future__ import annotations
 
@@ -65,13 +65,15 @@ def seed_memory(
     workspace: Path,
     target: Path | None = None,
     label: str | None = None,
-    baseline: bool = False,
+    record_starting_kernel: bool = False,
 ) -> None:
     from kernel_tools.tools import _tree
     from kernel_tools.tools._workspace import read_benchmark_manifest
 
-    if target is None and not baseline:
-        raise SystemExit("Error: choose --target, --baseline, or both.")
+    if target is None and not record_starting_kernel:
+        raise SystemExit(
+            "Error: choose --target, --record-starting-kernel, or both."
+        )
     if label is not None and target is None:
         raise SystemExit("Error: --label requires --target.")
 
@@ -117,16 +119,18 @@ def seed_memory(
             "evaluation": target_evaluation.model_dump(mode="json"),
         }
 
-    baseline_payload = None
-    if baseline:
+    starting_kernel_evaluation = None
+    if record_starting_kernel:
         from kernel_tools.tools.benchmark_kernel import benchmark_kernel
 
-        print("Benchmarking baseline from workspace src/.")
+        print("Benchmarking starting kernel from workspace src/.")
         result = benchmark_kernel(workspace, scope="full")
         try:
-            baseline_payload = json.loads(result)
+            starting_kernel_evaluation = json.loads(result)
         except json.JSONDecodeError as exc:
-            raise SystemExit(f"Error: baseline benchmark failed: {result}") from exc
+            raise SystemExit(
+                f"Error: starting-kernel benchmark failed: {result}"
+            ) from exc
 
     if memory is not None:
         _tree.save_memory(workspace, memory)
@@ -138,21 +142,21 @@ def seed_memory(
             f"{target_evaluation.workload_count} workloads)."
         )
 
-    if baseline_payload is not None:
+    if starting_kernel_evaluation is not None:
         from kernel_tools.tools.create_branch import create_branch
 
         result = create_branch(
             workspace,
-            slug="baseline",
-            structure="Initial workspace implementation.",
-            variant="Starting source from workspace setup.",
+            slug="starting_kernel",
+            structure="Provided starting kernel.",
+            variant="Provided starting kernel.",
         )
         if result.startswith("Error:"):
             raise SystemExit(result)
-        workloads = baseline_payload.get("workloads", {})
+        workloads = starting_kernel_evaluation.get("workloads", {})
         print(
-            "Seeded baseline as e0_baseline on b0_baseline "
-            f"({baseline_payload.get('status')}, "
+            "Recorded starting kernel as e0_starting_kernel on b0_starting_kernel "
+            f"({starting_kernel_evaluation.get('status')}, "
             f"{workloads.get('total', 0)} workloads)."
         )
 
@@ -162,17 +166,43 @@ def seed_target(workspace: Path, target: Path, label: str | None = None) -> None
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", type=Path, required=True)
-    parser.add_argument("--target", type=Path)
-    parser.add_argument("--label")
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
-        "--baseline",
+        "--workspace",
+        type=Path,
+        required=True,
+        help="Workspace containing task/ and src/.",
+    )
+    parser.add_argument(
+        "--target",
+        type=Path,
+        help=(
+            "Benchmark this solution once and pin its evaluation as the "
+            "comparison target; it is not copied into src/."
+        ),
+    )
+    parser.add_argument(
+        "--label",
+        help="Display name for --target; defaults to the target filename stem.",
+    )
+    parser.add_argument(
+        "--record-starting-kernel",
         action="store_true",
-        help="Fully benchmark and record the current src/ as e0_baseline.",
+        help=(
+            "Benchmark the current workspace src/ once and store its evaluation "
+            "as e0_starting_kernel."
+        ),
     )
     args = parser.parse_args(argv)
-    seed_memory(args.workspace, args.target, args.label, args.baseline)
+    seed_memory(
+        args.workspace,
+        args.target,
+        args.label,
+        args.record_starting_kernel,
+    )
     return 0
 
 

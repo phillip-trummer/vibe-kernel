@@ -7,7 +7,7 @@ SOL-ExecBench uses a BuildSpec incompatible with flashinfer-bench: `languages`
     uv run python scripts/solution_to_sol.py path/to/flashinfer_solution.json \
         path/to/sol_solution.json
 
-The converter is intentionally file-to-file so you can point it at any baseline
+The converter is intentionally file-to-file so you can point it at any starting
 or target JSON and write the SOL-native result wherever you want.
 """
 from __future__ import annotations

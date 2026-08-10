@@ -23,7 +23,9 @@ SCHEMA = {
         "properties": {
             "experiment_id": {
                 "type": "string",
-                "description": "Experiment id, e.g. 'e0_baseline' or 'e12_tiled'.",
+                "description": (
+                    "Experiment id, e.g. 'e0_starting_kernel' or 'e12_tiled'."
+                ),
             },
             "branch_id": {
                 "type": "string",
