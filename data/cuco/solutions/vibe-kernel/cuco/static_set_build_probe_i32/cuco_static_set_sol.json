@@ -1,5 +1,5 @@
 {
-  "name": "cuco_static_set_baseline",
+  "name": "cuco_static_set_sol",
   "definition": "static_set_build_probe_i32",
   "author": "vibe-kernel",
   "spec": {

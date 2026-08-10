@@ -107,3 +107,16 @@ uv run python scripts/validate_workspace.py --workspace .runs/my_run
 ```
 
 Reopen the same directory to continue a previous run.
+
+## Database kernels
+
+Beyond inference kernels, we introduce kernel tasks built on [cuCollections](https://github.com/NVIDIA/cuCollections), NVIDIA's
+GPU hash containers. The agent builds a hash set or multiset from a column of
+integer keys and answers membership or multiplicity queries against it. Their cost is driven by
+key cardinality, duplicate rate, hit rate, and skew, so the workloads sweep those.
+
+The `cuco_*` scripts need the cuCollections headers:
+
+```bash
+git clone https://github.com/NVIDIA/cuCollections.git .deps/cuCollections
+```

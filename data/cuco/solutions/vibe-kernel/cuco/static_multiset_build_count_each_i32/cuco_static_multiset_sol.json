@@ -1,0 +1,43 @@
+{
+  "name": "cuco_static_multiset_sol",
+  "definition": "static_multiset_build_count_each_i32",
+  "author": "vibe-kernel",
+  "spec": {
+    "languages": [
+      "cuda_cpp"
+    ],
+    "target_hardware": [
+      "LOCAL"
+    ],
+    "entry_point": "main.cpp::run",
+    "dependencies": [
+      "cuco"
+    ],
+    "destination_passing_style": true,
+    "binding": "torch",
+    "compile_options": {
+      "cuda_cflags": [
+        "-O3",
+        "--expt-extended-lambda"
+      ],
+      "cflags": [
+        "-O3"
+      ]
+    }
+  },
+  "sources": [
+    {
+      "path": "kernel.cu",
+      "content": "#include \"kernel.h\"\n\n#include <cuco/static_multiset.cuh>\n\n#include <cuda/stream_ref>\n\n#include <cstdint>\n#include <limits>\n\nvoid static_multiset_build_and_count_each(\n    const std::int32_t* build_keys,\n    std::size_t build_size,\n    const std::int32_t* probe_keys,\n    std::size_t probe_size,\n    std::int64_t* match_counts,\n    cudaStream_t stream) {\n  using key_type = std::int32_t;\n  constexpr auto empty_key_sentinel = std::numeric_limits<key_type>::min();\n\n  auto stream_ref = cuda::stream_ref{stream};\n\n  auto multiset = cuco::static_multiset<key_type>{\n      build_size * 2,\n      cuco::empty_key<key_type>{empty_key_sentinel},\n      {},\n      {},\n      {},\n      {},\n      {},\n      stream_ref};\n\n  multiset.insert_async(build_keys, build_keys + build_size, stream_ref);\n  multiset.count_each(\n      probe_keys,\n      probe_keys + probe_size,\n      multiset.key_eq(),\n      multiset.hash_function(),\n      match_counts,\n      stream_ref);\n}\n"
+    },
+    {
+      "path": "kernel.h",
+      "content": "#pragma once\n\n#include <cstddef>\n#include <cstdint>\n#include <cuda_runtime_api.h>\n\nvoid static_multiset_build_and_count_each(\n    const std::int32_t* build_keys,\n    std::size_t build_size,\n    const std::int32_t* probe_keys,\n    std::size_t probe_size,\n    std::int64_t* match_counts,\n    cudaStream_t stream);\n"
+    },
+    {
+      "path": "main.cpp",
+      "content": "#include \"kernel.h\"\n\n#include <ATen/cuda/CUDAContext.h>\n#include <torch/extension.h>\n\n#include <cstddef>\n#include <cstdint>\n#include <string>\n\nnamespace {\n\nvoid check_i32_vector(const torch::Tensor& tensor, const char* name) {\n  TORCH_CHECK(tensor.is_cuda(), name, \" must be a CUDA tensor\");\n  TORCH_CHECK(tensor.scalar_type() == torch::kInt32, name, \" must have int32 dtype\");\n  TORCH_CHECK(tensor.dim() == 1, name, \" must be one-dimensional\");\n  TORCH_CHECK(tensor.is_contiguous(), name, \" must be contiguous\");\n}\n\n}  // namespace\n\nvoid run(\n    const torch::Tensor& build_keys,\n    const torch::Tensor& probe_keys,\n    torch::Tensor match_counts) {\n  check_i32_vector(build_keys, \"build_keys\");\n  check_i32_vector(probe_keys, \"probe_keys\");\n  TORCH_CHECK(build_keys.numel() > 0, \"build_keys must not be empty\");\n  TORCH_CHECK(match_counts.is_cuda(), \"match_counts must be a CUDA tensor\");\n  TORCH_CHECK(match_counts.scalar_type() == torch::kInt64, \"match_counts must have int64 dtype\");\n  TORCH_CHECK(match_counts.dim() == 1, \"match_counts must be one-dimensional\");\n  TORCH_CHECK(match_counts.numel() == probe_keys.numel(), \"match_counts has the wrong length\");\n  TORCH_CHECK(match_counts.is_contiguous(), \"match_counts must be contiguous\");\n  TORCH_CHECK(\n      build_keys.get_device() == probe_keys.get_device() &&\n          build_keys.get_device() == match_counts.get_device(),\n      \"all tensors must be on the same CUDA device\");\n\n  static_multiset_build_and_count_each(\n      build_keys.data_ptr<std::int32_t>(),\n      static_cast<std::size_t>(build_keys.numel()),\n      probe_keys.data_ptr<std::int32_t>(),\n      static_cast<std::size_t>(probe_keys.numel()),\n      match_counts.data_ptr<std::int64_t>(),\n      at::cuda::getCurrentCUDAStream(build_keys.get_device()));\n}\n\nPYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {\n  module.def(\"run\", &run, \"Build a cuco::static_multiset and count each probe key\");\n}\n"
+    }
+  ],
+  "description": "Minimal cuco::static_multiset build-and-count-each baseline across the same unique, duplicate-heavy, uniform, and skewed database states as the static-set task."
+}
