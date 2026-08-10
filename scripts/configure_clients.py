@@ -86,8 +86,15 @@ def configure_clients(
             }
         }
     }
+    codex_features = (
+        "[features]\n"
+        "shell_tool = false\n\n"
+        if deny_builtins
+        else ""
+    )
     codex_config = (
-        "[mcp_servers.kernel-tools]\n"
+        codex_features
+        + "[mcp_servers.kernel-tools]\n"
         'command = "uv"\n'
         f"cwd = {json.dumps(str(REPO_ROOT))}\n"
         f"args = {json.dumps(['run', *server_args])}\n"
@@ -167,7 +174,10 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--deny-builtins",
         action="store_true",
-        help="Deny Claude Code's Bash, Read, and Edit tools.",
+        help=(
+            "Deny Claude Code's Bash, Read, and Edit tools, and disable "
+            "Codex's shell tool."
+        ),
     )
     parser.add_argument(
         "--include-task-description",
