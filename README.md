@@ -43,7 +43,7 @@ uv sync
 uv run kernel-tools-mcp --help
 ```
 
-### Create a workspace
+### 1. Create a workspace
 
 The repository includes example data and setup scripts. Choose one:
 
@@ -73,7 +73,7 @@ uv run python scripts/download_data.py
 uv run python scripts/seed_task.py --list
 ```
 
-### Start an agent
+### 2. Start an agent
 
 Claude Code & Codex read the generated project configuration automatically:
 
@@ -85,20 +85,20 @@ claude
 
 ## Workspace layout
 
+The seeding scripts are convenience. The tools only require the workspace to include the kernel source files (possibly empty) and task fixtures: kernel spec, workloads & benchmark configuration. 
+
 ```text
 .runs/my_run/
 ├── task/
-│   ├── definition.json
-│   ├── workloads.jsonl
-│   ├── blob/
-│   └── benchmark.json        # build spec and representative workload selection
+│   ├── definition.json       # flashinfer-trace
+│   ├── workloads.jsonl       # flashinfer-trace
+│   ├── blob/                 # flashinfer-trace
+│   └── benchmark.json        # adapter, hardware, reference timing, build spec and representative workloads
 └── src/
     ├── kernel.h
     ├── kernel.cu
     └── main.cpp
 ```
-
-The workspace must include the kernel source files and task fixtures (kernel spec, benchmark configuration & workloads) for the tools to function. 
 
 Validate its structure without building or running the kernel:
 
