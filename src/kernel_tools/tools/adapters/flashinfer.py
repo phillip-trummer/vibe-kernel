@@ -235,6 +235,10 @@ def _build_contract_text(spec: dict, definition) -> str:
     else:
         convention = f"returns ({out_str}) by value"
     parts = [f"The working kernel must define `{symbol}`, which {convention}."]
+    parts.append(
+        "Timed calls reuse the same tensor objects in one process; reusable "
+        "setup and planning may persist, but outputs must be recomputed."
+    )
     deps = spec.get("dependencies") or []
     if deps:
         parts.append(f"Available build dependencies: {', '.join(deps)}.")
