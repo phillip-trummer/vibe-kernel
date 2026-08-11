@@ -236,8 +236,9 @@ def _build_contract_text(spec: dict, definition) -> str:
         convention = f"returns ({out_str}) by value"
     parts = [f"The working kernel must define `{symbol}`, which {convention}."]
     parts.append(
-        "Timed calls reuse the same tensor objects in one process; reusable "
-        "setup and planning may persist, but outputs must be recomputed."
+        "Timed calls reuse the same tensor objects within one process. The score "
+        "measures GPU work launched by `run`; ordinary CPU work is excluded. "
+        "Reusable setup and planning may persist, but outputs must be recomputed."
     )
     deps = spec.get("dependencies") or []
     if deps:

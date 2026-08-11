@@ -454,8 +454,9 @@ def _build_contract_text(spec: dict, definition) -> str:
         convention = f"returns ({out_str}) by value"
     parts = [f"The working kernel must define `{symbol}`, which {convention}."]
     parts.append(
-        "Timed calls run in one process but tensors get new `data_ptr()` values "
-        "each iteration; reuse only pointer-independent state and recompute outputs."
+        "Timed calls use new `data_ptr()` values each iteration. The score measures "
+        "GPU work launched by `run`; ordinary CPU work is excluded. Reuse only "
+        "pointer-independent state, and recompute outputs every call."
     )
     deps = spec.get("dependencies") or []
     if deps:
