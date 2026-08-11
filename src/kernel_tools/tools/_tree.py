@@ -881,13 +881,12 @@ def _evaluation_summary(
         if count
         else ""
     )
+    latency = evaluation.get("geomean_latency_ms")
+    if latency is not None:
+        parts.append(f"geomean {_fmt_ms(latency)}{over}")
     geomean = evaluation.get("geomean_speedup_factor")
     if geomean is not None:
         parts.append(f"geomean {geomean:.2f}× vs reference{over}")
-    else:
-        latency = evaluation.get("geomean_latency_ms")
-        if latency is not None:
-            parts.append(f"geomean {_fmt_ms(latency)}{over}")
     ratio = _target_geomean_ratio(evaluation, target_evaluation)
     if target_label is not None and ratio is not None:
         parts.append(f"{ratio:.2f}× vs {target_label}")
@@ -918,11 +917,12 @@ def _representative_workload_lines(
         line = f"  - representative {label}: {outcome}"
         if outcome == "PASSED":
             metrics = []
+            latency = result.get("latency_ms")
+            if latency is not None:
+                metrics.append(_fmt_ms(latency))
             speedup = result.get("speedup_factor")
             if speedup is not None:
                 metrics.append(f"{speedup:.2f}× vs reference")
-            elif result.get("latency_ms") is not None:
-                metrics.append(_fmt_ms(result["latency_ms"]))
             ratio = _target_representative_workload_ratio(
                 result,
                 target_representatives.get(label),
