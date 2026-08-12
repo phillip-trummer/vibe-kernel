@@ -14,30 +14,13 @@ from ._workspace import (
 )
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 MEMORY_PATH = Path(".state/memory.json")
 MEMORY_VIEW_PATH = Path("experiment_memory.md")
 
 EXPERIMENT_RE = re.compile(r"^e(\d+)_")
 BRANCH_RE = re.compile(r"^b(\d+)_")
-MEMORY_ENTRY_RE = re.compile(r"^[a-z]+(\d+)$")
-
-_MEMORY_KEY = {
-    "hypothesis": "hypotheses",
-    "fact": "facts",
-    "hazard": "hazards",
-}
-_MEMORY_PREFIX = {
-    "hypothesis": "h",
-    "fact": "f",
-    "hazard": "r",
-}
-_TOP_LEVEL_KEY = {
-    scope: key for scope, key in _MEMORY_KEY.items() if scope != "hypothesis"
-}
-
-TOP_LEVEL_SCOPES = tuple(_TOP_LEVEL_KEY)
-FINDING_SCOPES = ("experiment_finding",)
+HYPOTHESIS_RE = re.compile(r"^h(\d+)$")
 
 
 def bootstrap_memory(
@@ -62,8 +45,6 @@ def bootstrap_memory(
         "hypotheses": {},
         "branches": {},
         "experiments": {},
-        "facts": {},
-        "hazards": {},
     }
 
 
@@ -150,7 +131,7 @@ def list_branch_ids(memory: dict) -> list[str]:
 
 
 def list_hypothesis_ids(memory: dict) -> list[str]:
-    return list_memory_entry_ids(memory, "hypothesis")
+    return sorted(memory["hypotheses"], key=_hypothesis_order)
 
 
 def has_hypothesis(memory: dict, hypothesis_id: str) -> bool:
@@ -159,14 +140,6 @@ def has_hypothesis(memory: dict, hypothesis_id: str) -> bool:
 
 def get_hypothesis(memory: dict, hypothesis_id: str) -> dict:
     return memory["hypotheses"][hypothesis_id]
-
-
-def list_memory_entry_ids(memory: dict, scope: str) -> list[str]:
-    return sorted(memory[_MEMORY_KEY[scope]], key=_memory_entry_order)
-
-
-def has_memory_entry(memory: dict, scope: str, entry_id: str) -> bool:
-    return entry_id in memory[_MEMORY_KEY[scope]]
 
 
 def find_experiment_by_solution(memory: dict, solution_name: str) -> Optional[str]:
@@ -240,18 +213,13 @@ def next_branch_number(memory: dict) -> int:
     return max(numbers) + 1 if numbers else 0
 
 
-def next_memory_entry_number(memory: dict, scope: str) -> int:
+def next_hypothesis_number(memory: dict) -> int:
     numbers = []
-    prefix = _MEMORY_PREFIX[scope]
-    for entry_id in memory[_MEMORY_KEY[scope]]:
-        match = MEMORY_ENTRY_RE.fullmatch(entry_id)
-        if match and entry_id.startswith(prefix):
+    for entry_id in memory["hypotheses"]:
+        match = HYPOTHESIS_RE.fullmatch(entry_id)
+        if match:
             numbers.append(int(match.group(1)))
     return max(numbers) + 1 if numbers else 0
-
-
-def next_memory_entry_id(memory: dict, scope: str) -> str:
-    return f"{_MEMORY_PREFIX[scope]}{next_memory_entry_number(memory, scope)}"
 
 
 def add_branch(
@@ -275,13 +243,11 @@ def add_experiment(
     branch_id: str,
     solution: str,
     variant: str,
-    finding: Optional[str],
     evaluation: dict,
 ) -> None:
     memory["experiments"][experiment_id] = {
         "solution": solution,
         "variant": variant,
-        "finding": finding,
         "evaluation": evaluation,
     }
     memory["branches"][branch_id]["experiments"].append(experiment_id)
@@ -292,7 +258,7 @@ def set_head(memory: dict, experiment_id: str) -> None:
 
 
 def add_hypothesis(memory: dict, base: str, text: str) -> str:
-    hypothesis_id = next_memory_entry_id(memory, "hypothesis")
+    hypothesis_id = f"h{next_hypothesis_number(memory)}"
     memory["hypotheses"][hypothesis_id] = {"base": base, "text": text}
     return hypothesis_id
 
@@ -400,42 +366,6 @@ def _metric_better(
     if new_latency is None:
         return False
     return current_latency is None or new_latency < current_latency
-
-
-def add_annotation(
-    memory: dict,
-    scope: str,
-    text: str,
-) -> str:
-    entry_id = next_memory_entry_id(memory, scope)
-    memory[_TOP_LEVEL_KEY[scope]][entry_id] = text
-    return entry_id
-
-
-def replace_annotation(
-    memory: dict,
-    scope: str,
-    entry_id: str,
-    text: str,
-) -> None:
-    memory[_TOP_LEVEL_KEY[scope]][entry_id] = text
-
-
-def remove_annotation(memory: dict, scope: str, entry_id: str) -> None:
-    del memory[_TOP_LEVEL_KEY[scope]][entry_id]
-
-
-def get_finding(memory: dict, scope: str, target_id: str) -> Optional[str]:
-    return memory["experiments"][target_id].get("finding")
-
-
-def set_finding(
-    memory: dict,
-    scope: str,
-    target_id: str,
-    finding: Optional[str],
-) -> None:
-    memory["experiments"][target_id]["finding"] = finding
 
 
 def render_memory(memory: dict) -> str:
@@ -554,32 +484,22 @@ def _render_optimization_state(memory: dict) -> list[str]:
 
     lines.append("")
 
-    for scope in ("hypothesis", "fact", "hazard"):
-        lines.extend(_render_annotation_section(memory, scope))
+    lines.extend(render_hypotheses(memory))
     return lines
 
 
-def _render_annotation_section(memory: dict, scope: str) -> list[str]:
-    title = {
-        "hypothesis": "Open hypotheses",
-        "fact": "Facts",
-        "hazard": "Hazards",
-    }[scope]
-    lines = [f"## {title}", ""]
-    entry_ids = list_memory_entry_ids(memory, scope)
+def render_hypotheses(memory: dict) -> list[str]:
+    lines = ["## Open hypotheses", ""]
+    entry_ids = list_hypothesis_ids(memory)
     if not entry_ids:
         lines.extend(["_(none)_", ""])
         return lines
-    if scope == "hypothesis":
-        for entry_id in entry_ids:
-            hypothesis = memory["hypotheses"][entry_id]
-            lines.append(
-                f"- `{entry_id}` from `{hypothesis['base']}` — "
-                f"{hypothesis['text']}"
-            )
-    else:
-        items = memory[_TOP_LEVEL_KEY[scope]]
-        lines.extend(f"- `{entry_id}` — {items[entry_id]}" for entry_id in entry_ids)
+    for entry_id in entry_ids:
+        hypothesis = memory["hypotheses"][entry_id]
+        lines.append(
+            f"- `{entry_id}` from `{hypothesis['base']}` — "
+            f"{hypothesis['text']}"
+        )
     lines.append("")
     return lines
 
@@ -671,9 +591,6 @@ def _render_branch(memory: dict, branch_id: str, *, full: bool) -> list[str]:
                 f"{memory['experiments'][representative]['variant']} — "
                 f"{_evaluation_summary(evaluation, target_label, target_evaluation)}"
             )
-            finding = memory["experiments"][representative].get("finding")
-            if finding:
-                lines.append(f"- **Representative finding:** {finding}")
         else:
             lines.append("- **Representative:** _(no experiment logged yet)_")
         return lines
@@ -801,16 +718,6 @@ def _tensor_desc(field: dict) -> str:
     return f"{base} — {description}" if description else base
 
 
-def render_annotation(
-    memory: dict,
-    scope: str,
-    target_id: Optional[str] = None,
-) -> str:
-    if scope == "hypothesis" or scope in TOP_LEVEL_SCOPES:
-        return "\n".join(_render_annotation_section(memory, scope)).rstrip() + "\n"
-    return render_experiment_memory(memory, target_id)
-
-
 def render_tool_result(acknowledgement: str, projection: str) -> str:
     return f"{acknowledgement.rstrip()}\n\n{projection.strip()}\n"
 
@@ -827,8 +734,8 @@ def _branch_order(branch_id: str) -> tuple[int, str]:
     return (int(match.group(1)), branch_id) if match else (-1, branch_id)
 
 
-def _memory_entry_order(entry_id: str) -> tuple[int, str]:
-    match = MEMORY_ENTRY_RE.fullmatch(entry_id)
+def _hypothesis_order(entry_id: str) -> tuple[int, str]:
+    match = HYPOTHESIS_RE.fullmatch(entry_id)
     return (int(match.group(1)), entry_id) if match else (-1, entry_id)
 
 
@@ -857,8 +764,6 @@ def _render_experiment(
             target_evaluation,
         )
     )
-    if experiment.get("finding"):
-        lines.append(f"- **Finding:** {experiment['finding']}")
     return lines
 
 

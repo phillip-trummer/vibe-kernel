@@ -48,14 +48,7 @@ SCHEMA = {
                     "Concise self-contained description of the first concrete variant "
                     "of this structure. State its parameter, schedule, layout, "
                     "synchronization, or implementation choices; omit measurements "
-                    "and findings."
-                ),
-            },
-            "finding": {
-                "type": "string",
-                "description": (
-                    "Optional non-obvious lesson or failure diagnosis needed by "
-                    "future work. Omit it when the recorded evaluation speaks for itself."
+                    "and conclusions."
                 ),
             },
             "hypothesis_id": {
@@ -78,14 +71,12 @@ def create_branch(
     slug: str,
     structure: str,
     variant: str,
-    finding: Optional[str] = None,
     hypothesis_id: Optional[str] = None,
 ) -> str:
     return _record_experiment(
         workspace,
         slug=slug,
         variant=variant,
-        finding=finding,
         structure=structure,
         hypothesis_id=hypothesis_id,
     )

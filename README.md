@@ -25,7 +25,7 @@ Kernel optimization is iterative and the search space is deep enough that no sin
 
 | Tool | Purpose |
 | --- | --- |
-| `read_memory`, `update_memory` | Read and maintain durable findings, hazards, and hypotheses. |
+| `read_memory`, `update_memory` | Read and maintain concrete hypotheses. |
 | `create_branch`, `log_experiment` | Organize and record kernel variants. |
 | `checkout_experiment`, `diff_experiment` | Restore or compare recorded experiments. |
 

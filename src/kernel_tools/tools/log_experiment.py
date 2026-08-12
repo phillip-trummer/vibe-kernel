@@ -45,14 +45,7 @@ SCHEMA = {
                     "of the branch structure. State the parameter, schedule, layout, "
                     "synchronization, or implementation choices that distinguish it. "
                     "Describe the resulting implementation, not a transition from "
-                    "another experiment; omit measurements and findings."
-                ),
-            },
-            "finding": {
-                "type": "string",
-                "description": (
-                    "Optional non-obvious lesson or failure diagnosis needed by "
-                    "future work. Omit it when the recorded evaluation speaks for itself."
+                    "another experiment; omit measurements and conclusions."
                 ),
             },
         },
@@ -68,13 +61,11 @@ def log_experiment(
     workspace: Path,
     slug: str,
     variant: str,
-    finding: Optional[str] = None,
 ) -> str:
     return _record_experiment(
         workspace,
         slug=slug,
         variant=variant,
-        finding=finding,
         structure=None,
         hypothesis_id=None,
     )
@@ -85,7 +76,6 @@ def _record_experiment(
     *,
     slug: str,
     variant: str,
-    finding: Optional[str],
     structure: Optional[str],
     hypothesis_id: Optional[str],
 ) -> str:
@@ -100,7 +90,6 @@ def _record_experiment(
     variant = variant.strip()
     if not variant:
         return "Error: variant must be non-empty."
-    finding = (finding or "").strip() or None
     if structure is not None:
         structure = structure.strip()
         if not structure:
@@ -190,7 +179,6 @@ def _record_experiment(
         branch_id=branch_id,
         solution=solution_name,
         variant=variant,
-        finding=finding,
         evaluation=evaluation_dict,
     )
     if hypothesis_id is not None:
