@@ -23,6 +23,7 @@ TOOL_NAMES = (
     "write_source",
     "edit_source",
     "benchmark_kernel",
+    "benchmark_sweep",
     "profile_kernel",
     "read_memory",
     "log_experiment",

@@ -1,6 +1,7 @@
 # Import each tool so its decorator registers it.
 from . import (
     benchmark_kernel,
+    benchmark_sweep,
     checkout_branch,
     diff_experiment,
     edit_source,
