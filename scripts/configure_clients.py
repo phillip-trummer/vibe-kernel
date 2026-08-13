@@ -31,7 +31,7 @@ TOOL_NAMES = (
     "diff_experiment",
     "update_idea",
 )
-MCP_TOOL_TIMEOUT_SECONDS = 3600
+MCP_TOOL_TIMEOUT_SECONDS = 4200
 
 
 def configure_clients(

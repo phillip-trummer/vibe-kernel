@@ -80,7 +80,7 @@ uv run python scripts/seed_task.py --list
 
 ### 2. Start an agent
 
-Claude Code & Codex read the generated project configuration automatically:
+The setup scripts register the MCP server and write shared agent instructions.
 
 ```bash
 cd .runs/my_run
@@ -90,7 +90,9 @@ claude
 
 ## Workspace layout
 
-The seeding scripts are convenience. The tools only require the workspace to include the kernel source files (possibly empty) and task fixtures: kernel spec, workloads & benchmark configuration. 
+The seeding scripts are convenience. The tools only require the workspace to
+include the kernel source files (possibly empty) and task fixtures: kernel
+spec, workloads & benchmark configuration.
 
 ```text
 .runs/my_run/
@@ -110,6 +112,34 @@ Validate its structure without building or running the kernel:
 ```bash
 uv run python scripts/validate_workspace.py --workspace .runs/my_run
 ```
+
+After creating this layout without a setup script, add the MCP server to the
+agent client manually. From the repository root, resolve the paths first:
+
+```bash
+VIBE_KERNEL_ROOT="$(pwd)"
+KERNEL_WORKSPACE="$(realpath .runs/my_run)"
+```
+
+For Codex:
+
+```bash
+codex mcp add kernel-tools -- \
+    uv run --project "$VIBE_KERNEL_ROOT" kernel-tools-mcp \
+    --workspace "$KERNEL_WORKSPACE"
+```
+
+For Claude Code, run the command inside the workspace so the local MCP entry
+is associated with that project:
+
+```bash
+cd "$KERNEL_WORKSPACE"
+claude mcp add --scope local kernel-tools -- \
+    uv run --project "$VIBE_KERNEL_ROOT" kernel-tools-mcp \
+    --workspace "$KERNEL_WORKSPACE"
+```
+
+Use `codex mcp list` or `claude mcp list` to verify the registration.
 
 Reopen the same directory to continue a previous run.
 
