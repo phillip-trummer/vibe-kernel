@@ -12,6 +12,7 @@ Agent tools for GPU kernel optimization using Claude Code or Codex.
 | `read_source` | Read a kernel source file. |
 | `edit_source`, `write_source` | Modify a kernel source file. |
 | `benchmark_kernel` | Build, validate, and time the kernel. |
+| `benchmark_sweep` | Benchmark several values of one source parameter. |
 | `profile_kernel` | Profile the kernel on a representative workload with Nsight Compute. |
 
 Supported benchmark backends:
