@@ -8,6 +8,8 @@ full-suite evaluations are cached for downstream tools.
 """
 
 import json
+import os
+import subprocess
 from pathlib import Path
 
 from kernel_tools.registry import registry
@@ -58,6 +60,8 @@ def benchmark_kernel(workspace: Path, scope: str = "smoke") -> str:
     if scope not in ("full", "smoke"):
         return "Error: scope must be 'full' or 'smoke'."
 
+    warning = _gpu_activity_warning()
+
     # Load the adapter (parses the task fixtures).
     try:
         adapter = get_adapter(workspace)
@@ -87,7 +91,41 @@ def benchmark_kernel(workspace: Path, scope: str = "smoke") -> str:
         )
         cache.save(cache_path)
 
-    return json.dumps(_format_for_agent(evaluation, scope), separators=(",", ":"))
+    payload = _format_for_agent(evaluation, scope)
+    if warning:
+        payload["warning"] = warning
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def _gpu_activity_warning() -> str | None:
+    """Warn when the GPU is already active before the benchmark starts."""
+    visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(",")
+    device = visible_devices[0].strip()
+    if not device or device == "-1":
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--id",
+                device,
+                "--query-gpu=utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=True,
+        )
+        utilization = int(result.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+    if utilization == 0:
+        return None
+
+    return f"GPU utilization was already {utilization}% at benchmark start; timings may be noisy."
 
 
 def _format_for_agent(evaluation, scope: str) -> dict:
