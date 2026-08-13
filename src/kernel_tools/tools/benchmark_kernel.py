@@ -26,17 +26,13 @@ from ._benchmark import BenchmarkUnavailable, get_adapter
 SCHEMA = {
     "name": "benchmark_kernel",
     "description": (
-        "Benchmark the current working kernel: builds the source, "
-        "checks correctness using the task's oracle, and measures performance. "
-        "The score is same-run speedup when a normalizer is available, otherwise "
-        "absolute latency (lower is better). Use scope='smoke' after most edits; it runs the "
-        "representative workloads (small, medium, large, xlarge) and is the "
-        "default fast iteration test. Use scope='full' after a smoke-passing "
-        "change before comparing it as a candidate, building further from it, "
-        "or moving on to another idea; it runs every workload and is slower. "
-        "Returns geomean/counts, "
-        "per-representative-workload outcome/performance, a normalized diagnostic "
-        "for failed workloads, and a breakdown of failure outcomes."
+        "Build, validate, and time the current working source. Use scope='smoke' "
+        "for fast iteration over the representative workloads. Use scope='full' "
+        "when the source is ready for an authoritative suite-wide evaluation and "
+        "before calling log_experiment; full results are cached for the exact source. "
+        "When a normalizer is available, the score is same-run speedup; otherwise "
+        "it is absolute latency, where lower is better. Returns aggregate performance, "
+        "representative-workload results, and compact correctness or failure diagnostics."
     ),
     "input_schema": {
         "type": "object",
@@ -46,11 +42,12 @@ SCHEMA = {
                 "enum": ["smoke", "full"],
                 "default": "smoke",
                 "description": (
-                    "smoke runs the four representative workloads for fast "
-                    "iteration; full runs the complete benchmark suite."
+                    "smoke runs the representative workloads for fast iteration; "
+                    "full runs the complete suite and caches the result for logging."
                 ),
             },
         },
+        "additionalProperties": False,
     },
 }
 

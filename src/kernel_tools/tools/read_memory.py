@@ -9,22 +9,23 @@ from . import _tree
 SCHEMA = {
     "name": "read_memory",
     "description": (
-        "Read experiment memory. With no branch_id, return task and global results, "
-        "the active branch's clean or dirty state and local history, every other "
-        "branch's head, and ideas grouped by branch. Pass branch_id to expand only "
-        "that branch's local history and ideas. Reading never changes the active "
-        "branch or the workspace markdown file."
+        "Review experiment memory. Omit branch_id for an overview of the current "
+        "state, recorded results, available branches, and ideas. Pass branch_id to "
+        "inspect one branch's history in detail when evaluating where to continue. "
+        "Reading memory never switches branches or restores source."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "branch_id": {
                 "type": "string",
+                "pattern": r"^b[0-9]+$",
                 "description": (
-                    "Optional branch to inspect, e.g. 'b2'."
+                    "Branch to inspect, e.g. 'b2'. Omit for the overview."
                 ),
             },
         },
+        "additionalProperties": False,
     },
 }
 
