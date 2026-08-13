@@ -8,13 +8,15 @@ from . import _tree
 
 
 _ACTIONS = ("add", "remove")
+_MAX_IDEA_LENGTH = 300
 
 SCHEMA = {
     "name": "update_idea",
     "description": (
         "Add an optional idea for the active branch, or remove an idea by id. "
-        "Ideas are branch-associated suggestions for future work. They are not "
-        "checkout targets and are never consumed automatically."
+        "Each idea is one concrete, not-yet-tried direction for future work. Do not "
+        "use ideas to record completed attempts, findings, profiling interpretations, "
+        "or conclusions. "
     ),
     "input_schema": {
         "type": "object",
@@ -27,7 +29,12 @@ SCHEMA = {
             },
             "text": {
                 "type": "string",
-                "description": "Idea to add. Required for add.",
+                "maxLength": _MAX_IDEA_LENGTH,
+                "description": (
+                    "One concise, concrete direction that has not yet been tried. "
+                    "Do not include past results or conclusions. Required for add; "
+                    f"maximum {_MAX_IDEA_LENGTH} characters."
+                ),
             },
             "idea_id": {
                 "type": "string",
@@ -56,6 +63,11 @@ def update_idea(
         text = (text or "").strip()
         if not text:
             return "Error: action 'add' requires non-empty text."
+        if len(text) > _MAX_IDEA_LENGTH:
+            return (
+                f"Error: idea text must be at most {_MAX_IDEA_LENGTH} characters "
+                f"(received {len(text)})."
+            )
         if idea_id is not None:
             return "Error: action 'add' allocates idea_id automatically; omit idea_id."
         idea_id = _tree.add_idea(memory, branch_id, text)

@@ -148,6 +148,7 @@ def seed_memory(
         result = log_experiment(
             workspace,
             summary="Provided starting kernel.",
+            action="advance",
         )
         if result.startswith("Error:"):
             raise SystemExit(result)

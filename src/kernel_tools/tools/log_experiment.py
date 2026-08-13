@@ -14,39 +14,41 @@ from ._workspace import (
 
 
 _ACTIONS = ("advance", "fork")
+_MAX_SUMMARY_LENGTH = 500
 
 SCHEMA = {
     "name": "log_experiment",
     "description": (
         "Record the fully benchmarked working source as an immutable experiment. "
-        "Use action='advance' to move the active branch head forward; its previous "
-        "head remains history but is no longer checkoutable. Use action='fork' to "
-        "preserve the current branch head and create a new active branch from it. "
-        "An empty memory accepts advance to create the root branch; fork then has no "
-        "source branch and is rejected. Requires benchmark_kernel(scope='full') on "
-        "this exact source."
+        "The next session can directly resume only branch heads. Use action='advance' "
+        "when the current head is useful only as history; use action='fork' when both "
+        "the current head and this new source should remain directly resumable. A "
+        "substantial rewrite can warrant a fork even when it improves performance. "
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "summary": {
                 "type": "string",
+                "maxLength": _MAX_SUMMARY_LENGTH,
                 "description": (
-                    "Briefly state what distinguishes this source from its parent. "
-                    "Omit measurements, conclusions, history, and future plans."
+                    "Concise commit-style summary of what distinguishes this source "
+                    "from its parent. Name the implementation changes; omit "
+                    "measurements, causal explanations, conclusions, history, and "
+                    f"future plans. Maximum {_MAX_SUMMARY_LENGTH} characters."
                 ),
             },
             "action": {
                 "type": "string",
                 "enum": list(_ACTIONS),
-                "default": "advance",
                 "description": (
-                    "Advance the active branch, or fork a new branch while preserving "
-                    "the current one."
+                    "Advance when the previous head need not remain directly "
+                    "resumable; fork when both source states should remain available "
+                    "to the next session."
                 ),
             },
         },
-        "required": ["summary"],
+        "required": ["summary", "action"],
     },
 }
 
@@ -55,13 +57,18 @@ SCHEMA = {
 def log_experiment(
     workspace: Path,
     summary: str,
-    action: str = "advance",
+    action: str,
 ) -> str:
     memory = _tree.load_or_initialize_memory(workspace)
 
     summary = summary.strip()
     if not summary:
         return "Error: summary must be non-empty."
+    if len(summary) > _MAX_SUMMARY_LENGTH:
+        return (
+            f"Error: summary must be at most {_MAX_SUMMARY_LENGTH} characters "
+            f"(received {len(summary)})."
+        )
     if action not in _ACTIONS:
         return f"Error: action {action!r} must be one of: {', '.join(_ACTIONS)}."
 
