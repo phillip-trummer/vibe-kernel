@@ -25,11 +25,10 @@ TOOL_NAMES = (
     "benchmark_kernel",
     "profile_kernel",
     "read_memory",
-    "create_branch",
     "log_experiment",
-    "checkout_experiment",
+    "checkout_branch",
     "diff_experiment",
-    "update_memory",
+    "update_idea",
 )
 MCP_TOOL_TIMEOUT_SECONDS = 3600
 

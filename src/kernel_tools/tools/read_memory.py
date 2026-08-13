@@ -9,10 +9,11 @@ from . import _tree
 SCHEMA = {
     "name": "read_memory",
     "description": (
-        "Read one of two experiment-memory views. With no branch_id, return global "
-        "context including all open hypotheses, the expanded head variant, and a "
-        "compact catalog of every structural branch. Pass branch_id to return only "
-        "that branch and all of its variants."
+        "Read experiment memory. With no branch_id, return task and global results, "
+        "the active branch's clean or dirty state and local history, every other "
+        "branch's head, and ideas grouped by branch. Pass branch_id to expand only "
+        "that branch's local history and ideas. Reading never changes the active "
+        "branch or the workspace markdown file."
     ),
     "input_schema": {
         "type": "object",
@@ -20,8 +21,7 @@ SCHEMA = {
             "branch_id": {
                 "type": "string",
                 "description": (
-                    "Optional structural branch to inspect, e.g. "
-                    "'b2_eight_stage_pipeline'."
+                    "Optional branch to inspect, e.g. 'b2'."
                 ),
             },
         },

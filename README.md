@@ -25,9 +25,13 @@ Kernel optimization is iterative and the search space is deep enough that no sin
 
 | Tool | Purpose |
 | --- | --- |
-| `read_memory`, `update_memory` | Read and maintain concrete hypotheses. |
-| `create_branch`, `log_experiment` | Organize and record kernel variants. |
-| `checkout_experiment`, `diff_experiment` | Restore or compare recorded experiments. |
+| `read_memory` | Review previous experiments and ideas. |
+| `log_experiment` | Save the current kernel and its benchmark results. |
+| `checkout_branch` | Return to a saved alternative. |
+| `diff_experiment` | Compare two kernel source code snapshots. |
+| `update_idea` | Save or remove an idea for future work. |
+
+Experiments form linear histories. Each branch points to its latest experiment, and forks preserve alternative branch heads. Only branch heads can be checked out.
 
 ## Quick start
 

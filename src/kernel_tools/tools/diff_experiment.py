@@ -1,11 +1,4 @@
-"""Diff a logged experiment against the current working kernel.
-
-Lets the agent see what it has changed in the working kernel relative to a
-logged experiment, without checking anything out. To compare two logged
-experiments, check one out and diff against the other. Optional filename
-narrows the diff to a single file; otherwise all files on either side are
-diffed.
-"""
+"""Diff a logged experiment against the working source or another experiment."""
 import difflib
 from pathlib import Path
 from typing import Optional
@@ -15,24 +8,32 @@ from kernel_tools.registry import registry
 from . import _tree
 from ._workspace import read_src_files, resolve_experiment_dir
 
+
 SCHEMA = {
     "name": "diff_experiment",
     "description": (
-        "Show a unified diff between a logged experiment and the current "
-        "working kernel. Useful for seeing what you have changed since an "
-        "experiment, or which code change moved performance. To compare two "
-        "logged experiments, check one out first, then diff against the other."
+        "Show a unified source diff from one logged experiment to the current "
+        "working kernel or to another logged experiment. This is read-only and may "
+        "inspect historical experiments even though only branch heads are checkout "
+        "targets."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "experiment": {
                 "type": "string",
-                "description": "Experiment id to diff against, e.g. 'e2_tiled'.",
+                "description": "Experiment on the left side, e.g. 'e2'.",
+            },
+            "against_experiment": {
+                "type": "string",
+                "description": (
+                    "Optional logged experiment on the right side. If omitted, "
+                    "compare against the working kernel."
+                ),
             },
             "filename": {
                 "type": "string",
-                "description": "Restrict diff to a single file. Diffs all files if omitted.",
+                "description": "Restrict the diff to one file.",
             },
         },
         "required": ["experiment"],
@@ -44,39 +45,52 @@ SCHEMA = {
 def diff_experiment(
     workspace: Path,
     experiment: str,
+    against_experiment: Optional[str] = None,
     filename: Optional[str] = None,
 ) -> str:
-    _tree.load_or_initialize_memory(workspace)
+    memory = _tree.load_or_initialize_memory(workspace)
+    if not _tree.has_experiment(memory, experiment):
+        return (
+            f"Error: experiment {experiment!r} not found. "
+            f"Available: {_tree.list_experiment_ids(memory)}"
+        )
+    if against_experiment is not None and not _tree.has_experiment(
+        memory, against_experiment
+    ):
+        return (
+            f"Error: experiment {against_experiment!r} not found. "
+            f"Available: {_tree.list_experiment_ids(memory)}"
+        )
 
-    # Resolve the experiment snapshot (path-traversal safe; clear error if missing).
-    exp_dir = resolve_experiment_dir(workspace, experiment)
-    if not isinstance(exp_dir, Path):
-        return f"Error: {exp_dir}"
+    left = _snapshot_files(workspace, experiment)
+    if isinstance(left, str):
+        return f"Error: {left}"
+    if against_experiment is None:
+        right = dict(read_src_files(workspace))
+        right_label = "working_kernel"
+    else:
+        right = _snapshot_files(workspace, against_experiment)
+        if isinstance(right, str):
+            return f"Error: {right}"
+        right_label = against_experiment
 
-    exp_files = {
-        p.name: p.read_text()
-        for p in exp_dir.iterdir()
-        if p.is_file()
-    }
-    working_files = dict(read_src_files(workspace))
-
-    # Pick which files to diff.
     if filename is not None:
-        if filename not in exp_files and filename not in working_files:
-            return f"Error: neither {experiment!r} nor the working kernel contains {filename!r}."
+        if filename not in left and filename not in right:
+            return (
+                f"Error: neither {experiment!r} nor {right_label!r} "
+                f"contains {filename!r}."
+            )
         names = [filename]
     else:
-        names = sorted(exp_files.keys() | working_files.keys())
+        names = sorted(left.keys() | right.keys())
 
-    # Unified diff per file; a file absent on one side diffs against empty,
-    # and identical files yield nothing and are skipped.
     chunks = []
     for name in names:
         diff = difflib.unified_diff(
-            exp_files.get(name, "").splitlines(keepends=True),
-            working_files.get(name, "").splitlines(keepends=True),
+            left.get(name, "").splitlines(keepends=True),
+            right.get(name, "").splitlines(keepends=True),
             fromfile=f"{experiment}/{name}",
-            tofile=f"working_kernel/{name}",
+            tofile=f"{right_label}/{name}",
         )
         text = "".join(diff)
         if text:
@@ -84,5 +98,16 @@ def diff_experiment(
 
     if not chunks:
         scope = f" for {filename!r}" if filename else ""
-        return f"No differences between {experiment} and the working kernel{scope}."
+        return f"No differences between {experiment} and {right_label}{scope}."
     return "\n".join(chunks)
+
+
+def _snapshot_files(workspace: Path, experiment_id: str) -> dict[str, str] | str:
+    directory = resolve_experiment_dir(workspace, experiment_id)
+    if not isinstance(directory, Path):
+        return directory
+    return {
+        path.name: path.read_text()
+        for path in directory.iterdir()
+        if path.is_file()
+    }

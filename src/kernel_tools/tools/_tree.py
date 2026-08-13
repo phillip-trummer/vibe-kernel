@@ -1,4 +1,4 @@
-"""Durable state and rendering for the experiment memory."""
+"""Durable experiment graph and its readable projections."""
 from __future__ import annotations
 
 import json
@@ -18,9 +18,9 @@ SCHEMA_VERSION = 5
 MEMORY_PATH = Path(".state/memory.json")
 MEMORY_VIEW_PATH = Path("experiment_memory.md")
 
-EXPERIMENT_RE = re.compile(r"^e(\d+)_")
-BRANCH_RE = re.compile(r"^b(\d+)_")
-HYPOTHESIS_RE = re.compile(r"^h(\d+)$")
+EXPERIMENT_RE = re.compile(r"^e(\d+)$")
+BRANCH_RE = re.compile(r"^b(\d+)$")
+IDEA_RE = re.compile(r"^i(\d+)$")
 
 
 def bootstrap_memory(
@@ -38,13 +38,12 @@ def bootstrap_memory(
         "language": language,
         "task_spec": {},
         "build_contract": None,
-        "head": None,
-        "active_branch": None,
         "representative_workload_axes": {},
         "target": None,
-        "hypotheses": {},
+        "active_branch": None,
         "branches": {},
         "experiments": {},
+        "ideas": {},
     }
 
 
@@ -56,8 +55,8 @@ def create_memory(workspace: Path) -> dict:
     build_spec = manifest["build_spec"]
     adapter = get_adapter(workspace, manifest)
     task_spec = adapter.task_spec().model_dump(mode="json")
-
     languages = build_spec.get("languages") or [build_spec.get("language", "")]
+
     memory = bootstrap_memory(
         task=task_spec["name"],
         kernel_description=task_spec.get("description", ""),
@@ -71,7 +70,6 @@ def create_memory(workspace: Path) -> dict:
 
 
 def load_memory(workspace: Path) -> dict:
-    # Load current state
     memory_path = workspace / MEMORY_PATH
     if not memory_path.is_file():
         raise FileNotFoundError(
@@ -87,31 +85,31 @@ def load_memory(workspace: Path) -> dict:
 
 
 def load_or_initialize_memory(workspace: Path) -> dict:
-    memory_path = workspace / MEMORY_PATH
-    if memory_path.is_file():
+    if (workspace / MEMORY_PATH).is_file():
         return load_memory(workspace)
-
     memory = create_memory(workspace)
     save_memory(workspace, memory)
     return memory
 
 
 def save_memory(workspace: Path, memory: dict) -> None:
-    # Persist canonical state
     memory_path = workspace / MEMORY_PATH
     memory_path.parent.mkdir(parents=True, exist_ok=True)
     memory_path.write_text(json.dumps(memory, indent=2) + "\n")
+    (workspace / MEMORY_VIEW_PATH).write_text(render_memory(memory, workspace))
 
-    # Render readable memory
-    (workspace / MEMORY_VIEW_PATH).write_text(render_memory(memory))
+
+def get_active_branch(memory: dict) -> Optional[str]:
+    return memory["active_branch"]
+
+
+def set_active_branch(memory: dict, branch_id: str) -> None:
+    memory["active_branch"] = branch_id
 
 
 def get_head(memory: dict) -> Optional[str]:
-    return memory["head"]
-
-
-def get_experiment(memory: dict, experiment_id: str) -> dict:
-    return memory["experiments"][experiment_id]
+    branch_id = get_active_branch(memory)
+    return memory["branches"][branch_id]["head"] if branch_id else None
 
 
 def has_experiment(memory: dict, experiment_id: str) -> bool:
@@ -130,16 +128,25 @@ def list_branch_ids(memory: dict) -> list[str]:
     return sorted(memory["branches"], key=_branch_order)
 
 
-def list_hypothesis_ids(memory: dict) -> list[str]:
-    return sorted(memory["hypotheses"], key=_hypothesis_order)
+def branch_history(memory: dict, branch_id: str) -> list[str]:
+    """Return branch-local experiment ids newest-first."""
+    branch = memory["branches"][branch_id]
+    boundary = branch["forked_from"]
+    experiment_id = branch["head"]
+    history = []
+    while experiment_id is not None and experiment_id != boundary:
+        history.append(experiment_id)
+        experiment_id = memory["experiments"][experiment_id]["parent_id"]
+    return history
 
 
-def has_hypothesis(memory: dict, hypothesis_id: str) -> bool:
-    return hypothesis_id in memory["hypotheses"]
-
-
-def get_hypothesis(memory: dict, hypothesis_id: str) -> dict:
-    return memory["hypotheses"][hypothesis_id]
+def head_state(workspace: Path, memory: dict) -> Optional[str]:
+    head = get_head(memory)
+    if head is None:
+        return None
+    solution = memory["experiments"][head]["solution"]
+    working_solution = solution_name_from_src_files(read_src_files(workspace))
+    return "clean" if working_solution == solution else "dirty"
 
 
 def find_experiment_by_solution(memory: dict, solution_name: str) -> Optional[str]:
@@ -149,56 +156,15 @@ def find_experiment_by_solution(memory: dict, solution_name: str) -> Optional[st
     return None
 
 
-def find_branch_for_experiment(memory: dict, experiment_id: str) -> Optional[str]:
-    for branch_id, branch in memory["branches"].items():
-        if experiment_id in branch["experiments"]:
-            return branch_id
-    return None
-
-
-def parent_branch_id(memory: dict, branch_id: str) -> Optional[str]:
-    base = memory["branches"][branch_id]["base"]
-    return find_branch_for_experiment(memory, base) if base else None
-
-
-def get_active_branch(memory: dict) -> Optional[str]:
-    return memory["active_branch"]
-
-
-def set_active_branch(memory: dict, branch_id: str) -> None:
-    memory["active_branch"] = branch_id
-
-
-def branch_accepts_head(
-    memory: dict,
-    branch_id: str,
-    experiment_id: Optional[str],
-) -> bool:
-    branch = memory["branches"][branch_id]
-    return experiment_id == branch["base"] or experiment_id in branch["experiments"]
-
-
-def head_state(workspace: Path, memory: dict) -> Optional[str]:
-    head = memory["head"]
-    experiment = memory["experiments"].get(head) if head else None
-    solution = experiment.get("solution") if experiment else None
-    files = read_src_files(workspace) if solution else []
-    if not solution or not files:
-        return None
-    return (
-        "clean" if solution_name_from_src_files(files) == solution else "dirty"
-    )
-
-
 def next_experiment_number(memory: dict, experiments_dir: Path) -> int:
-    numbers: list[int] = []
+    numbers = []
     if experiments_dir.is_dir():
         for path in experiments_dir.iterdir():
-            match = EXPERIMENT_RE.match(path.name) if path.is_dir() else None
+            match = EXPERIMENT_RE.fullmatch(path.name) if path.is_dir() else None
             if match:
                 numbers.append(int(match.group(1)))
     for experiment_id in memory["experiments"]:
-        match = EXPERIMENT_RE.match(experiment_id)
+        match = EXPERIMENT_RE.fullmatch(experiment_id)
         if match:
             numbers.append(int(match.group(1)))
     return max(numbers) + 1 if numbers else 0
@@ -207,89 +173,91 @@ def next_experiment_number(memory: dict, experiments_dir: Path) -> int:
 def next_branch_number(memory: dict) -> int:
     numbers = []
     for branch_id in memory["branches"]:
-        match = BRANCH_RE.match(branch_id)
+        match = BRANCH_RE.fullmatch(branch_id)
         if match:
             numbers.append(int(match.group(1)))
     return max(numbers) + 1 if numbers else 0
 
 
-def next_hypothesis_number(memory: dict) -> int:
+def next_idea_number(memory: dict) -> int:
     numbers = []
-    for entry_id in memory["hypotheses"]:
-        match = HYPOTHESIS_RE.fullmatch(entry_id)
+    for idea_id in memory["ideas"]:
+        match = IDEA_RE.fullmatch(idea_id)
         if match:
             numbers.append(int(match.group(1)))
     return max(numbers) + 1 if numbers else 0
-
-
-def add_branch(
-    memory: dict,
-    *,
-    branch_id: str,
-    base: Optional[str],
-    structure: str,
-) -> None:
-    memory["branches"][branch_id] = {
-        "base": base,
-        "structure": structure,
-        "experiments": [],
-    }
 
 
 def add_experiment(
     memory: dict,
     *,
     experiment_id: str,
-    branch_id: str,
+    parent_id: Optional[str],
+    summary: str,
     solution: str,
-    variant: str,
     evaluation: dict,
 ) -> None:
     memory["experiments"][experiment_id] = {
+        "parent_id": parent_id,
+        "summary": summary,
         "solution": solution,
-        "variant": variant,
         "evaluation": evaluation,
     }
-    memory["branches"][branch_id]["experiments"].append(experiment_id)
 
 
-def set_head(memory: dict, experiment_id: str) -> None:
-    memory["head"] = experiment_id
+def add_root_branch(memory: dict, branch_id: str, experiment_id: str) -> None:
+    memory["branches"][branch_id] = {
+        "forked_from": None,
+        "head": experiment_id,
+    }
+    memory["active_branch"] = branch_id
 
 
-def add_hypothesis(memory: dict, base: str, text: str) -> str:
-    hypothesis_id = f"h{next_hypothesis_number(memory)}"
-    memory["hypotheses"][hypothesis_id] = {"base": base, "text": text}
-    return hypothesis_id
+def advance_branch(memory: dict, branch_id: str, experiment_id: str) -> None:
+    memory["branches"][branch_id]["head"] = experiment_id
 
 
-def replace_hypothesis(
+def fork_branch(
     memory: dict,
-    hypothesis_id: str,
-    base: str,
-    text: str,
+    branch_id: str,
+    forked_from: str,
+    experiment_id: str,
 ) -> None:
-    memory["hypotheses"][hypothesis_id] = {"base": base, "text": text}
+    memory["branches"][branch_id] = {
+        "forked_from": forked_from,
+        "head": experiment_id,
+    }
+    memory["active_branch"] = branch_id
 
 
-def consume_hypothesis(memory: dict, hypothesis_id: str) -> None:
-    del memory["hypotheses"][hypothesis_id]
+def list_idea_ids(memory: dict) -> list[str]:
+    return sorted(memory["ideas"], key=_idea_order)
+
+
+def has_idea(memory: dict, idea_id: str) -> bool:
+    return idea_id in memory["ideas"]
+
+
+def add_idea(memory: dict, branch_id: str, text: str) -> str:
+    idea_id = f"i{next_idea_number(memory)}"
+    memory["ideas"][idea_id] = {"branch_id": branch_id, "text": text}
+    return idea_id
+
+
+def remove_idea(memory: dict, idea_id: str) -> None:
+    del memory["ideas"][idea_id]
+
+
+def ideas_for_branch(memory: dict, branch_id: str) -> list[str]:
+    return [
+        idea_id
+        for idea_id in list_idea_ids(memory)
+        if memory["ideas"][idea_id]["branch_id"] == branch_id
+    ]
 
 
 def better_evaluation(new: dict, current: Optional[dict]) -> bool:
-    """Compare scored aggregate evaluations."""
     return _scorable(new) and _geomean_better(new, current)
-
-
-def branch_representative(memory: dict, branch_id: str) -> Optional[str]:
-    representative = None
-    for experiment_id in memory["branches"][branch_id]["experiments"]:
-        if representative is None or _preferred_representative(
-            memory["experiments"][experiment_id]["evaluation"],
-            memory["experiments"][representative]["evaluation"],
-        ):
-            representative = experiment_id
-    return representative
 
 
 def current_best(memory: dict) -> Optional[str]:
@@ -304,30 +272,23 @@ def current_best(memory: dict) -> Optional[str]:
 
 
 def best_by_representative_workload(memory: dict) -> dict[str, str]:
-    bests: dict[str, str] = {}
+    bests = {}
     for experiment_id in list_experiment_ids(memory):
         evaluation = memory["experiments"][experiment_id]["evaluation"]
-        for label, result in evaluation["representative_workloads"].items():
+        for label, result in evaluation.get("representative_workloads", {}).items():
             if result["outcome"] != "PASSED":
                 continue
             current_id = bests.get(label)
             current_result = (
-                memory["experiments"][current_id]["evaluation"][
-                    "representative_workloads"
-                ].get(label)
+                memory["experiments"][current_id]["evaluation"]
+                .get("representative_workloads", {})
+                .get(label)
                 if current_id
                 else None
             )
             if _result_better(result, current_result):
                 bests[label] = experiment_id
     return bests
-
-
-def _preferred_representative(new: dict, current: dict) -> bool:
-    # A scored experiment always wins; between unscored ones the latest stands.
-    if not _scorable(new):
-        return not _scorable(current)
-    return better_evaluation(new, current) or not _scorable(current)
 
 
 def _scorable(evaluation: dict) -> bool:
@@ -368,93 +329,35 @@ def _metric_better(
     return current_latency is None or new_latency < current_latency
 
 
-def render_memory(memory: dict) -> str:
+def render_memory(memory: dict, workspace: Optional[Path] = None) -> str:
     lines = ["# Experiment Memory", ""]
     lines.extend(render_task_spec(memory))
-    lines.extend(_render_optimization_state(memory))
-    lines.extend(
-        _render_current_state(
-            memory,
-            expand_head=False,
-            check_dirty=False,
-        )
-    )
-    lines.extend(_render_branch_collection(memory, list_branch_ids(memory), full=True))
+    lines.extend(_render_results(memory))
+    lines.extend(_render_current_branch(memory, workspace))
+    lines.extend(_render_other_branches(memory))
     return "\n".join(lines).rstrip() + "\n"
 
 
 def render_catalog_memory(workspace: Path, memory: dict) -> str:
-    lines = ["# Experiment Memory", ""]
-    lines.extend(render_task_spec(memory))
-    lines.extend(_render_optimization_state(memory))
-    lines.extend(_render_current_state(memory, workspace=workspace))
-    branch_ids = list_branch_ids(memory)
-    lines.extend(_render_branch_collection(memory, branch_ids, full=False))
-    lines.append(
-        f"_({len(branch_ids)} structure"
-        f"{'s' if len(branch_ids) != 1 else ''} shown; pass branch_id to "
-        "read_memory to inspect all variants of one branch.)_"
-    )
-    return "\n".join(lines).rstrip() + "\n"
+    return render_memory(memory, workspace)
 
 
 def render_branch_memory(memory: dict, branch_id: str) -> str:
-    projection = render_branch_projection(memory, branch_id)
-    return f"# Experiment Memory\n\n{projection.strip()}\n"
+    lines = ["# Experiment Memory", ""]
+    lines.extend(_render_expanded_branch(memory, branch_id))
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def render_branch_projection(memory: dict, branch_id: str) -> str:
-    lines = _render_branch_collection(
-        memory,
-        [branch_id],
-        full=True,
-        title="Branch variants",
-    )
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def render_experiment_memory(memory: dict, experiment_id: str) -> str:
-    target_label, target_evaluation = _target(memory)
-    marker = "head" if experiment_id == memory["head"] else ""
-    lines = ["## Experiment", ""]
-    lines.extend(
-        _render_experiment(
-            experiment_id,
-            memory["experiments"][experiment_id],
-            target_label,
-            target_evaluation,
-            heading_level=3,
-            marker=marker,
-        )
-    )
-    return "\n".join(lines).rstrip() + "\n"
+    return "\n".join(_render_expanded_branch(memory, branch_id)).rstrip() + "\n"
 
 
 def render_current_state_memory(workspace: Path, memory: dict) -> str:
-    return (
-        "\n".join(_render_current_state(memory, workspace=workspace)).rstrip() + "\n"
-    )
+    return "\n".join(_render_current_branch(memory, workspace)).rstrip() + "\n"
 
 
-def _render_branch_collection(
-    memory: dict,
-    branch_ids: list[str],
-    *,
-    full: bool,
-    title: str = "Structural catalog",
-) -> list[str]:
-    lines = [f"## {title}", ""]
-    if not branch_ids:
-        lines.extend(["_(none)_", ""])
-        return lines
-    for branch_id in branch_ids:
-        lines.extend(_render_branch(memory, branch_id, full=full))
-        lines.append("")
-    return lines
-
-
-def _render_optimization_state(memory: dict) -> list[str]:
-    lines = ["## Optimization state", ""]
+def _render_results(memory: dict) -> list[str]:
+    lines = ["## Results", ""]
     target_label, target_evaluation = _target(memory)
     if target_label is not None:
         lines.append(
@@ -467,11 +370,11 @@ def _render_optimization_state(memory: dict) -> list[str]:
     if best:
         evaluation = memory["experiments"][best]["evaluation"]
         lines.append(
-            f"- **Current best:** `{best}` — "
+            f"- **Global best:** `{best}` — "
             f"{_evaluation_summary(evaluation, target_label, target_evaluation)}"
         )
     else:
-        lines.append("- **Current best:** _(unset)_")
+        lines.append("- **Global best:** _(unset)_")
 
     bests = best_by_representative_workload(memory)
     if bests:
@@ -481,139 +384,130 @@ def _render_optimization_state(memory: dict) -> list[str]:
             if label in bests
         )
         lines.append(f"- **Best by representative workload:** {rendered}")
-
-    lines.append("")
-
-    lines.extend(render_hypotheses(memory))
-    return lines
-
-
-def render_hypotheses(memory: dict) -> list[str]:
-    lines = ["## Open hypotheses", ""]
-    entry_ids = list_hypothesis_ids(memory)
-    if not entry_ids:
-        lines.extend(["_(none)_", ""])
-        return lines
-    for entry_id in entry_ids:
-        hypothesis = memory["hypotheses"][entry_id]
-        lines.append(
-            f"- `{entry_id}` from `{hypothesis['base']}` — "
-            f"{hypothesis['text']}"
-        )
     lines.append("")
     return lines
 
 
-def _render_current_state(
+def _render_current_branch(
     memory: dict,
-    *,
-    workspace: Path | None = None,
-    expand_head: bool = True,
-    check_dirty: bool = True,
+    workspace: Optional[Path],
 ) -> list[str]:
-    lines = ["## Current state", ""]
-    active_branch = get_active_branch(memory)
-    lines.append(
-        f"- **Active branch:** `{active_branch}`"
-        if active_branch
-        else "- **Active branch:** _(unset — create_branch records the root structure)_"
-    )
-    head = memory["head"]
-    if head is None:
-        lines.extend(["- **Head:** _(unset)_", ""])
+    lines = ["## Current branch", ""]
+    branch_id = get_active_branch(memory)
+    if branch_id is None:
+        lines.extend(
+            [
+                "- **Active branch:** _(unset — log the root experiment)_",
+                "- **Head:** _(unset)_",
+                "",
+                "### Local history",
+                "",
+                "_(none)_",
+                "",
+                "### Ideas",
+                "",
+                "_(none)_",
+                "",
+            ]
+        )
         return lines
 
-    current_head_state = (
-        head_state(workspace, memory)
-        if check_dirty and workspace is not None
-        else None
-    )
-    suffix = (
-        " _(dirty — working kernel has diverged from head)_"
-        if current_head_state == "dirty"
-        else ""
-    )
-    owner = find_branch_for_experiment(memory, head)
-    lines.append(f"- **Head:** `{head}`{suffix}")
-    lines.append(f"- **Head branch:** `{owner}`")
-    if (
-        active_branch
-        and active_branch != owner
-        and memory["branches"][active_branch]["base"] == head
-    ):
-        lines.append(
-            f"- **Working position:** head is the base of active branch "
-            f"`{active_branch}`."
-        )
+    branch = memory["branches"][branch_id]
+    lines.append(f"- **Active branch:** `{branch_id}`")
+    lines.append(f"- **Head:** `{branch['head']}`")
+    if workspace is not None:
+        lines.append(f"- **Working source:** {head_state(workspace, memory)}")
     lines.append("")
-    if not expand_head:
-        return lines
-
-    target_label, target_evaluation = _target(memory)
-    lines.extend(
-        _render_experiment(
-            head,
-            memory["experiments"][head],
-            target_label,
-            target_evaluation,
-            heading_level=3,
-            marker="head variant",
-        )
-    )
-    lines.append("")
+    lines.extend(_render_history(memory, branch_id))
+    lines.extend(render_ideas(memory, branch_id))
     return lines
 
 
-def _render_branch(memory: dict, branch_id: str, *, full: bool) -> list[str]:
+def _render_expanded_branch(memory: dict, branch_id: str) -> list[str]:
     branch = memory["branches"][branch_id]
-    parent_branch = parent_branch_id(memory, branch_id)
-    branch_marker = " _(active)_" if branch_id == get_active_branch(memory) else ""
-    lines = [f"### `{branch_id}`{branch_marker}"]
+    marker = " _(active)_" if branch_id == get_active_branch(memory) else ""
+    lines = [f"## Branch `{branch_id}`{marker}", ""]
     lines.append(
-        f"- **Parent branch:** `{parent_branch}`"
-        if parent_branch
-        else "- **Parent branch:** _(root)_"
+        f"- **Forked from:** `{branch['forked_from']}`"
+        if branch["forked_from"] is not None
+        else "- **Forked from:** _(root)_"
     )
-    lines.append(
-        f"- **Base experiment:** `{branch['base']}`"
-        if branch["base"]
-        else "- **Base experiment:** _(none)_"
-    )
-    lines.append(f"- **Structure:** {branch['structure']}")
+    lines.extend([f"- **Head:** `{branch['head']}`", ""])
+    lines.extend(_render_history(memory, branch_id))
+    lines.extend(render_ideas(memory, branch_id))
+    return lines
 
+
+def _render_history(memory: dict, branch_id: str) -> list[str]:
+    lines = ["### Local history", ""]
     target_label, target_evaluation = _target(memory)
-    representative = branch_representative(memory, branch_id)
-    if not full:
-        if representative:
-            evaluation = memory["experiments"][representative]["evaluation"]
-            lines.append(
-                f"- **Representative:** `{representative}` — "
-                f"{memory['experiments'][representative]['variant']} — "
-                f"{_evaluation_summary(evaluation, target_label, target_evaluation)}"
-            )
-        else:
-            lines.append("- **Representative:** _(no experiment logged yet)_")
-        return lines
-
-    if branch["experiments"]:
-        lines.append("- **Variants:**")
-        for experiment_id in branch["experiments"]:
-            marker = "head" if experiment_id == memory["head"] else ""
-            rendered = _render_experiment(
-                experiment_id,
-                memory["experiments"][experiment_id],
+    head = memory["branches"][branch_id]["head"]
+    for experiment_id in branch_history(memory, branch_id):
+        experiment = memory["experiments"][experiment_id]
+        marker = " _(head)_" if experiment_id == head else ""
+        lines.append(f"#### `{experiment_id}`{marker}")
+        lines.append(f"- **Summary:** {experiment['summary']}")
+        lines.append(
+            f"- **Evaluation:** "
+            f"{_evaluation_summary(experiment['evaluation'], target_label, target_evaluation)}"
+        )
+        lines.extend(
+            _representative_workload_lines(
+                experiment["evaluation"],
                 target_label,
                 target_evaluation,
-                heading_level=0,
-                marker=marker,
             )
-            lines.append(f"  - {rendered[0]}")
-            lines.extend(_indent(rendered[1:], "    "))
+        )
+        lines.append("")
     return lines
 
 
-def _indent(lines: list[str], prefix: str) -> list[str]:
-    return [prefix + line if line else line for line in lines]
+def render_ideas(memory: dict, branch_id: str) -> list[str]:
+    lines = ["### Ideas", ""]
+    idea_ids = ideas_for_branch(memory, branch_id)
+    if idea_ids:
+        lines.extend(
+            f"- `{idea_id}` — {memory['ideas'][idea_id]['text']}"
+            for idea_id in idea_ids
+        )
+    else:
+        lines.append("_(none)_")
+    lines.append("")
+    return lines
+
+
+def _render_other_branches(memory: dict) -> list[str]:
+    lines = ["## Other branches", ""]
+    active = get_active_branch(memory)
+    branch_ids = [
+        branch_id
+        for branch_id in list_branch_ids(memory)
+        if branch_id != active
+    ]
+    if not branch_ids:
+        lines.extend(["_(none)_", ""])
+        return lines
+
+    target_label, target_evaluation = _target(memory)
+    for branch_id in branch_ids:
+        branch = memory["branches"][branch_id]
+        head = branch["head"]
+        experiment = memory["experiments"][head]
+        lines.append(f"### `{branch_id}`")
+        lines.append(f"- **Head:** `{head}` — {experiment['summary']}")
+        lines.append(
+            f"- **Evaluation:** "
+            f"{_evaluation_summary(experiment['evaluation'], target_label, target_evaluation)}"
+        )
+        idea_ids = ideas_for_branch(memory, branch_id)
+        if idea_ids:
+            lines.append("- **Ideas:**")
+            lines.extend(
+                f"  - `{idea_id}` — {memory['ideas'][idea_id]['text']}"
+                for idea_id in idea_ids
+            )
+        lines.append("")
+    return lines
 
 
 def render_task_spec(memory: dict) -> list[str]:
@@ -722,49 +616,19 @@ def render_tool_result(acknowledgement: str, projection: str) -> str:
     return f"{acknowledgement.rstrip()}\n\n{projection.strip()}\n"
 
 
-def _experiment_order(experiment_id: str) -> tuple[int, int, str]:
-    match = EXPERIMENT_RE.match(experiment_id)
-    if match:
-        return (0, int(match.group(1)), experiment_id)
-    return (-1, -1, experiment_id)
+def _experiment_order(experiment_id: str) -> tuple[int, str]:
+    match = EXPERIMENT_RE.fullmatch(experiment_id)
+    return (int(match.group(1)), experiment_id) if match else (-1, experiment_id)
 
 
 def _branch_order(branch_id: str) -> tuple[int, str]:
-    match = BRANCH_RE.match(branch_id)
+    match = BRANCH_RE.fullmatch(branch_id)
     return (int(match.group(1)), branch_id) if match else (-1, branch_id)
 
 
-def _hypothesis_order(entry_id: str) -> tuple[int, str]:
-    match = HYPOTHESIS_RE.fullmatch(entry_id)
-    return (int(match.group(1)), entry_id) if match else (-1, entry_id)
-
-
-def _render_experiment(
-    experiment_id: str,
-    experiment: dict,
-    target_label: Optional[str],
-    target_evaluation: Optional[dict],
-    *,
-    heading_level: int = 4,
-    marker: str = "",
-) -> list[str]:
-    evaluation = experiment["evaluation"]
-    prefix = f"{'#' * heading_level} " if heading_level else ""
-    marker_text = f" _({marker})_" if marker else ""
-    lines = [f"{prefix}`{experiment_id}`{marker_text} ({evaluation['status']})"]
-    lines.append(f"- **Variant:** {experiment['variant']}")
-    lines.append(
-        f"- **Evaluation:** "
-        f"{_evaluation_summary(evaluation, target_label, target_evaluation)}"
-    )
-    lines.extend(
-        _representative_workload_lines(
-            evaluation,
-            target_label,
-            target_evaluation,
-        )
-    )
-    return lines
+def _idea_order(idea_id: str) -> tuple[int, str]:
+    match = IDEA_RE.fullmatch(idea_id)
+    return (int(match.group(1)), idea_id) if match else (-1, idea_id)
 
 
 def _target(memory: dict) -> tuple[Optional[str], Optional[dict]]:
@@ -781,11 +645,7 @@ def _evaluation_summary(
 ) -> str:
     parts = [evaluation["status"]]
     count = evaluation.get("workload_count")
-    over = (
-        f" over {count} workload{'s' if count != 1 else ''}"
-        if count
-        else ""
-    )
+    over = f" over {count} workload{'s' if count != 1 else ''}" if count else ""
     latency = evaluation.get("geomean_latency_ms")
     if latency is not None:
         parts.append(f"geomean {_fmt_ms(latency)}{over}")
@@ -808,7 +668,7 @@ def _representative_workload_lines(
     target_evaluation: Optional[dict] = None,
 ) -> list[str]:
     lines = []
-    representatives = evaluation["representative_workloads"]
+    representatives = evaluation.get("representative_workloads", {})
     target_representatives = (
         target_evaluation.get("representative_workloads", {})
         if target_evaluation

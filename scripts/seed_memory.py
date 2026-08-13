@@ -143,19 +143,17 @@ def seed_memory(
         )
 
     if starting_kernel_evaluation is not None:
-        from kernel_tools.tools.create_branch import create_branch
+        from kernel_tools.tools.log_experiment import log_experiment
 
-        result = create_branch(
+        result = log_experiment(
             workspace,
-            slug="starting_kernel",
-            structure="Provided starting kernel.",
-            variant="Provided starting kernel.",
+            summary="Provided starting kernel.",
         )
         if result.startswith("Error:"):
             raise SystemExit(result)
         workloads = starting_kernel_evaluation.get("workloads", {})
         print(
-            "Recorded starting kernel as e0_starting_kernel on b0_starting_kernel "
+            "Recorded starting kernel as e0 on b0 "
             f"({starting_kernel_evaluation.get('status')}, "
             f"{workloads.get('total', 0)} workloads)."
         )
@@ -193,7 +191,7 @@ def main(argv=None) -> int:
         action="store_true",
         help=(
             "Benchmark the current workspace src/ once and store its evaluation "
-            "as e0_starting_kernel."
+            "as the root experiment e0 on branch b0."
         ),
     )
     args = parser.parse_args(argv)
