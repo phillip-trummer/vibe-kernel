@@ -18,9 +18,9 @@ import sys
 from pathlib import Path
 
 if __package__:
-    from .seed_stub import STUB_LANGUAGES, make_stub_solution
+    from .seed_stub import CUDA_BINDINGS, STUB_LANGUAGES, make_stub_solution
 else:
-    from seed_stub import STUB_LANGUAGES, make_stub_solution
+    from seed_stub import CUDA_BINDINGS, STUB_LANGUAGES, make_stub_solution
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -210,6 +210,7 @@ def seed_workspace(
     auto_representative_workloads: bool = False,
     reference_timing: bool = True,
     include_dirs: list[Path] | None = None,
+    cuda_binding: str | None = None,
     force: bool = False,
 ) -> None:
     workspace = workspace.resolve()
@@ -234,6 +235,10 @@ def seed_workspace(
         )
     if include_dirs and adapter != "sol":
         raise SystemExit("Error: --include-dir is currently supported only by SOL.")
+    if cuda_binding is not None and (adapter != "flashinfer" or stub != "cuda"):
+        raise SystemExit(
+            "Error: --cuda-binding requires --adapter flashinfer --stub cuda."
+        )
 
     definition_path = _definitions(data_dir).get(definition)
     if definition_path is None:
@@ -278,6 +283,7 @@ def seed_workspace(
             adapter,
             build_hardware,
             language=stub,
+            cuda_binding=cuda_binding,
         )
         starting_kernel_label = f"generated {stub} stub"
     else:
@@ -348,6 +354,9 @@ def seed_workspace(
         language = solution["spec"].get("language")
         languages = [language] if language else ["unknown"]
     print(f"  language: {', '.join(languages)}")
+    binding = solution["spec"].get("binding")
+    if binding:
+        print(f"  binding: {binding}")
     print(f"  sources: {len(solution['sources'])} file(s)")
     print("  state: not initialized")
 
@@ -385,6 +394,14 @@ def _parse_args(argv=None) -> argparse.Namespace:
         choices=STUB_LANGUAGES,
         metavar="LANGUAGE",
         help="Populate src/ with a generated cuda, python, or triton scaffold.",
+    )
+    parser.add_argument(
+        "--cuda-binding",
+        choices=CUDA_BINDINGS,
+        help=(
+            "Binding for a FlashInfer CUDA stub (default: tvm-ffi). "
+            "Use torch to generate a PyTorch extension scaffold instead."
+        ),
     )
     representatives = parser.add_mutually_exclusive_group()
     representatives.add_argument(
@@ -472,6 +489,7 @@ def main(argv=None) -> int:
         auto_representative_workloads=args.auto_representative_workloads,
         reference_timing=args.reference_timing,
         include_dirs=args.include_dir,
+        cuda_binding=args.cuda_binding,
         force=args.force,
     )
     return 0

@@ -66,6 +66,15 @@ bash mla_flash_triton_memory.sh .runs/my_run
 
 These examples deliberately vary the backend, starting kernel, language, workload selection, reference timing, and memory configuration. Mix these options as needed.
 
+#### CUDA backend notes
+
+- Generated FlashInfer CUDA stubs use the TVM-FFI binding and destination-passing
+  outputs by default. This matches the compiled-solution ABI expected by
+  FlashInfer Trace Apply and is a prerequisite for testing candidates under
+  SGLang. SOL-ExecBench currently supports only the Torch extension binding.
+- When using the FlashInfer backend under CUDA 13, currently disable reference
+  timing with `--no-reference-timing`.
+
 The scripts seed and validate the workspace, add shared agent instructions, and
 configure Claude Code & Codex.
 

@@ -2,7 +2,8 @@
 
 SOL-ExecBench uses a BuildSpec incompatible with flashinfer-bench: `languages`
 (a list) replaces `language`, and `target_hardware` is narrowed to the enum
-{B200, LOCAL}. Everything else about the solution object carries over unchanged.
+{B200, LOCAL}. CUDA/C++ solutions must already use the Torch binding: translating
+the schema cannot translate TVM-FFI source code into a PyTorch extension.
 
     uv run python scripts/solution_to_sol.py path/to/flashinfer_solution.json \
         path/to/sol_solution.json
@@ -39,10 +40,30 @@ def _translate_spec(spec: dict, hardware: str) -> dict:
         language = translated.pop("language", None)
         if language not in LANGUAGES:
             raise SystemExit(f"Error: SOL has no builder for language {language!r}.")
+        if language in {"cuda", "cpp"} and translated.get("binding") != "torch":
+            binding = translated.get("binding")
+            detail = (
+                "an omitted binding (which defaults to TVM-FFI in FlashInfer-Bench)"
+                if binding is None
+                else repr(binding)
+            )
+            raise SystemExit(
+                "Error: cannot convert a FlashInfer CUDA/C++ solution using "
+                f"{detail}. SOL-ExecBench currently supports only the Torch "
+                "extension binding, and this script does not rewrite source ABIs."
+            )
         translated.pop("target_hardware", None)
         translated["languages"] = [LANGUAGES[language]]
         translated["target_hardware"] = [hardware]
 
+    # Do not emit a file that SOL itself will reject. This also protects the
+    # pass-through branch above when an already-SOL-shaped spec is supplied.
+    from sol_execbench import BuildSpec
+
+    try:
+        BuildSpec.model_validate(translated)
+    except ValueError as exc:
+        raise SystemExit(f"Error: translated SOL build spec is invalid: {exc}") from exc
     return translated
 
 

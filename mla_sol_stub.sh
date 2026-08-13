@@ -4,7 +4,8 @@ set -euo pipefail
 workspace_path="${1:-.runs/my_run}"
 data_dir="${VIBE_KERNEL_DATA_DIR:-data/mla_paged}"
 
-# Create task/, benchmark.json, and an unimplemented CUDA scaffold under src/.
+# Create task/, benchmark.json, and a Torch-extension CUDA scaffold under src/.
+# Torch is the only compiled binding currently supported by SOL-ExecBench.
 uv run python scripts/seed_task.py \
     --workspace "$workspace_path" \
     --data-dir "$data_dir" \
@@ -26,6 +27,7 @@ uv run python scripts/configure_clients.py \
         write_source \
         edit_source \
         benchmark_kernel \
+        benchmark_sweep \
         profile_kernel
 
 echo "Workspace ready: $workspace_path"

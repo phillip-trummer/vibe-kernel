@@ -4,7 +4,7 @@ set -euo pipefail
 workspace_path="${1:-.runs/my_run}"
 data_dir="${VIBE_KERNEL_DATA_DIR:-data/mla_paged}"
 
-# Create task/, benchmark.json, and an unimplemented CUDA scaffold under src/.
+# Create task/, benchmark.json, and a TVM-FFI CUDA scaffold under src/.
 uv run python scripts/seed_task.py \
     --workspace "$workspace_path" \
     --data-dir "$data_dir" \
@@ -12,6 +12,7 @@ uv run python scripts/seed_task.py \
     --adapter flashinfer \
     --no-reference-timing \
     --stub cuda \
+    --cuda-binding tvm-ffi \
     --representative-workloads \
         990b57e3-2975-41a1-be67-ecd1ba020887 \
         787d2d2f-548c-46ab-9ded-55fd30b1de20 \

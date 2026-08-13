@@ -235,6 +235,14 @@ def _build_contract_text(spec: dict, definition) -> str:
     else:
         convention = f"returns ({out_str}) by value"
     parts = [f"The working kernel must define `{symbol}`, which {convention}."]
+    binding = spec.get("binding")
+    if binding == "tvm-ffi":
+        parts.append(
+            "It must use TVM-FFI tensor arguments and export the entry point with "
+            f"`TVM_FFI_DLL_EXPORT_TYPED_FUNC({symbol}, ...)`."
+        )
+    elif binding == "torch":
+        parts.append("It uses the PyTorch extension binding.")
     parts.append(
         "Timed calls reuse the same tensor objects within one process. The score "
         "measures GPU work launched by `run`; ordinary CPU work is excluded. "
@@ -346,11 +354,18 @@ def _prewarm_build(definition, solution) -> None:
     (the profile_kernel ncu child) reuses the artifact instead of recompiling.
     The build dir is keyed by content hash, so the child derives the same path.
 
-    Builds via TorchBuilder directly, not _build_runnable: the registry's
-    in-process cache would short-circuit without guaranteeing the on-disk
-    artifact exists (e.g. after a benchmark run cleaned the dir)."""
-    from flashinfer_bench.compile.builders import TorchBuilder
-    TorchBuilder().build(definition, solution)
+    Builds via a fresh binding-specific builder, not _build_runnable: the
+    registry's in-process cache would short-circuit without guaranteeing the
+    on-disk artifact exists (e.g. after a benchmark run cleaned the dir)."""
+    from flashinfer_bench.compile.builders import TorchBuilder, TVMFFIBuilder
+
+    builders = (TVMFFIBuilder(), TorchBuilder())
+    builder = next((item for item in builders if item.can_build(solution)), None)
+    if builder is None:
+        # Triton/Python do not need a separately persisted extension here. The
+        # profiler child will build them through the normal registry path.
+        return
+    builder.build(definition, solution)
 
 
 def _materialize_inputs(
