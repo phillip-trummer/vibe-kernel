@@ -97,6 +97,16 @@ claude
 # codex
 ```
 
+Alternatively use the minimal agent loop with any OpenAI-compatible model instead:
+
+```bash
+export VIBE_KERNEL_WORKSPACE=.runs/my_run
+export OPENAI_BASE_URL=...
+export OPENAI_MODEL=...
+export OPENAI_API_KEY=...
+uv run python run_agent.py
+```
+
 ## Workspace layout
 
 The seeding scripts are convenience. The tools only require the workspace to

@@ -9,6 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "flashinfer-bench @ git+https://github.com/flashinfer-ai/flashinfer-bench.git@40e6ca7844b514eb4b1c7edba6d6a7377df57870",
     "mcp>=2.0.0,<3",
+    "openai>=2.0",
     "pydantic>=2,<3",
     "sol-execbench",
     "torch==2.12.1",
