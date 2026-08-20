@@ -1,0 +1,21 @@
+{
+  "name": "temp_a23816b0",
+  "definition": "mla_paged_decode_h16_ckv512_kpe64_ps1",
+  "author": "kernelbench_eval",
+  "spec": {
+    "language": "triton",
+    "target_hardware": [
+      "B200"
+    ],
+    "entry_point": "main.py::run",
+    "dependencies": [],
+    "destination_passing_style": false
+  },
+  "sources": [
+    {
+      "path": "main.py",
+      "content": "```python\nimport math\nimport torch\nimport triton\nimport triton.language as tl\n\n\n# ---------------------------------------------------------------------------\n# Main MLA paged-decode kernel (flash-decoding style, optional split-K)\n# ---------------------------------------------------------------------------\n@triton.jit\ndef _mla_decode_kernel(\n    q_nope_ptr, q_pe_ptr, ckv_ptr, kpe_ptr, indptr_ptr, indices_ptr,\n    acc_ptr, pm_ptr, pl_ptr, out_ptr, lse_ptr,\n    qk_scale,\n    stride_qn_b, stride_qn_h,\n    stride_qp_b, stride_qp_h,\n    stride_kc_p, stride_kp_p,\n    stride_acc_b, stride_acc_s, stride_acc_h,\n    stride_ml_b, stride_ml_s,\n    stride_o_b, stride_o_h,\n    stride_lse_b,\n    H: tl.constexpr, BH: tl.constexpr, D: tl.constexpr, R: tl.constexpr,\n    BLOCK_N: tl.constexpr, NUM_SPLITS: tl.constexpr,\n    SPLIT: tl.constexpr, EVEN_H: tl.constexpr,\n):\n    pid_b = tl.program_id(0)\n    pid_s = tl.program_id(1)\n    b = pid_b.to(tl.int64)\n    s = pid_s.to(tl.int64)\n\n    kv_beg = tl.load(indptr_ptr + pid_b)\n    kv_end = tl.load(indptr_ptr + pid_b + 1)\n    L = kv_end - kv_beg\n\n    if SPLIT:\n        per = tl.cdiv(tl.cdiv(L, NUM_SPLITS), BLOC"
+    }
+  ],
+  "description": "KernelBench evaluation for mla_paged_decode_h16_ckv512_kpe64_ps1"
+}

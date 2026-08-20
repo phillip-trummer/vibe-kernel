@@ -1,0 +1,21 @@
+{
+  "name": "temp_432e1cc3",
+  "definition": "mla_paged_decode_h16_ckv512_kpe64_ps1",
+  "author": "kernelbench_eval",
+  "spec": {
+    "language": "triton",
+    "target_hardware": [
+      "B200"
+    ],
+    "entry_point": "main.py::run",
+    "dependencies": [],
+    "destination_passing_style": false
+  },
+  "sources": [
+    {
+      "path": "main.py",
+      "content": "```python\nimport math\nimport torch\nimport triton\nimport triton.language as tl\n\n_LOG2E = 1.4426950408889634\n\n\n# ---------------------------------------------------------------------------\n# Fused split-K MLA paged decode kernel (page_size == 1)\n#\n#   q_nope : [B, H, D_CKV]   (bf16)\n#   q_pe   : [B, H, D_KPE]   (bf16)\n#   ckv    : [P, 1, D_CKV]   (bf16)\n#   kpe    : [P, 1, D_KPE]   (bf16)\n#\n# When NUM_SPLITS > 1 each CTA computes a partial (flash) attention result,\n# writes it to a scratch buffer and bumps a per-batch counter with release\n# semantics.  The *last* arriving CTA of a batch element performs the\n# log-sum-exp reduction in the very same launch, which removes the second\n# kernel launch entirely (launch overhead dominates decode workloads).\n# ---------------------------------------------------------------------------\n@triton.jit\ndef _mla_decode_kernel(\n    q_nope_ptr, q_pe_ptr, ckv_ptr, kpe_ptr,\n    kv_indptr_ptr, kv_indices_ptr,\n    out_ptr, lse_ptr,\n    po_ptr, pl_ptr, cnt_ptr,\n    scale,\n    stride_qnb, stride_qnh,\n    stride_qpb, stride_qph,\n    stride_ckvp, stride_kpep,\n    stride_ob, stride_oh,\n    NUM_SPLITS: tl.constexpr,\n    H: tl.constexpr,\n    D_CKV: tl.constexpr,\n    D_KPE: tl.constexpr,\n    BLOCK_N: tl.constexpr,\n    SCALE_IS_PTR: tl.constexpr,\n):\n    s = tl.program_id(0)\n    b = tl.program_id(1)\n    b64 = b.to(tl.int64)\n\n    if SCALE_IS_PTR:\n        sc = tl.load(scale).to(tl.float32) * 1.4426950408889634\n    else:\n        sc = scale\n\n    beg = tl.load(kv_indptr_ptr + b)\n    end = t"
+    }
+  ],
+  "description": "KernelBench evaluation for mla_paged_decode_h16_ckv512_kpe64_ps1"
+}

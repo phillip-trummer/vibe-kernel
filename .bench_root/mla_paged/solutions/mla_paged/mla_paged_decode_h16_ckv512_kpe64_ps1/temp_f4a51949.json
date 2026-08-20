@@ -1,0 +1,21 @@
+{
+  "name": "temp_f4a51949",
+  "definition": "mla_paged_decode_h16_ckv512_kpe64_ps1",
+  "author": "kernelbench_eval",
+  "spec": {
+    "language": "triton",
+    "target_hardware": [
+      "B200"
+    ],
+    "entry_point": "main.py::run",
+    "dependencies": [],
+    "destination_passing_style": false
+  },
+  "sources": [
+    {
+      "path": "main.py",
+      "content": "```python\nimport math\nimport torch\nimport triton\nimport triton.language as tl\n\n_LOG2E = 1.4426950408889634\n\n\n# ---------------------------------------------------------------------------\n# Single-CTA-per-sequence MLA decode kernel (no split-K)\n#   q_nope : [B, H, D]   bf16 (contiguous)\n#   q_pe   : [B, H, R]   bf16 (contiguous)\n#   ckv    : [P, ps, D]  bf16 (last dim contiguous, page_size == 1)\n#   kpe    : [P, ps, R]  bf16\n# ---------------------"
+    }
+  ],
+  "description": "KernelBench evaluation for mla_paged_decode_h16_ckv512_kpe64_ps1"
+}
