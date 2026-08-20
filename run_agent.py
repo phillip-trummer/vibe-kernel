@@ -15,6 +15,11 @@ by ``scripts/configure_clients.py``, so any workspace seeded for Claude Code
 or Codex works here unchanged.
 
 Writes an append-only JSONL transcript to ``<workspace>/.agent_logs/``.
+
+Claude models are driven through the Anthropic SDK instead of the
+OpenAI-compatible path, so the conversation prefix can be cached. The loop,
+the transcript format and the tools are identical either way -- only the
+request shape differs.
 """
 from __future__ import annotations
 
@@ -39,6 +44,9 @@ INIT_MESSAGE = "Begin kernel optimization."
 CONTINUE_MESSAGE = "Continue kernel optimization."
 RESET_HINT = "Your context was reset. "
 MAX_RETRIES = 5
+# The conversation is resent whole every round, so the prefix is worth caching.
+# Rounds include a full benchmark, which routinely exceeds the 5m default TTL.
+CACHE_TTL = "1h"
 
 # Detect context overflow errors
 _CONTEXT_OVERFLOW_MARKERS = (
@@ -89,6 +97,124 @@ def _to_openai_tool(tool: Any) -> dict[str, Any]:
     }
 
 
+def _is_anthropic_model(model: str) -> bool:
+    return "claude" in (model or "").lower()
+
+
+def _to_anthropic_tool(tool: Any) -> dict[str, Any]:
+    return {
+        "name": tool.name,
+        "description": tool.description or "",
+        "input_schema": tool.input_schema or {"type": "object", "properties": {}},
+    }
+
+
+def _anthropic_request(messages: list[dict[str, Any]]) -> tuple[Any, list[dict[str, Any]]]:
+    """Render the canonical OpenAI-shaped history into an Anthropic request.
+
+    Cache breakpoints are applied to copies, never to the stored history: a
+    breakpoint written back into a message would change the prefix bytes on the
+    next round and invalidate the very cache it was meant to create.
+    """
+    system: Any = None
+    out: list[dict[str, Any]] = []
+    for message in messages:
+        role = message["role"]
+        if role == "system":
+            system = [{
+                "type": "text",
+                "text": message["content"],
+                "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL},
+            }]
+        elif role == "user":
+            out.append({"role": "user", "content": [{"type": "text", "text": message["content"]}]})
+        elif role == "assistant":
+            # Replay the model's own blocks verbatim, so thinking survives the round trip.
+            out.append({"role": "assistant", "content": list(message["_native_content"])})
+        elif role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": message["tool_call_id"],
+                "content": message["content"],
+            }
+            last = out[-1] if out else None
+            if last and last["role"] == "user" and last["content"][-1].get("type") == "tool_result":
+                last["content"] = [*last["content"], block]  # one user turn per tool batch
+            else:
+                out.append({"role": "user", "content": [block]})
+
+    if out:
+        blocks = list(out[-1]["content"])
+        blocks[-1] = {**blocks[-1], "cache_control": {"type": "ephemeral", "ttl": CACHE_TTL}}
+        out[-1] = {**out[-1], "content": blocks}
+    return system, out
+
+
+async def complete_anthropic(
+    client: Any, args: argparse.Namespace, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+) -> tuple[dict[str, Any], list[tuple[str, str, dict[str, Any] | None]], dict[str, Any], str | None]:
+    """One Claude turn. Streams, because max_tokens here is far past the
+    non-streaming timeout."""
+    system, request_messages = _anthropic_request(messages)
+    kwargs: dict[str, Any] = {"tools": tools} if tools else {}
+    if args.reasoning_effort:
+        kwargs["output_config"] = {"effort": args.reasoning_effort}
+
+    async with client.messages.stream(
+        model=args.model, max_tokens=args.max_tokens,
+        system=system, messages=request_messages, **kwargs,
+    ) as stream:
+        response = await stream.get_final_message()
+
+    native = [block.model_dump(exclude_none=True) for block in response.content]
+    text = "".join(block.text for block in response.content if block.type == "text")
+    calls = [
+        (block.id, block.name, dict(block.input or {}))
+        for block in response.content
+        if block.type == "tool_use"
+    ]
+    message = {
+        "role": "assistant",
+        "content": text,
+        "tool_calls": [
+            {"id": cid, "type": "function",
+             "function": {"name": name, "arguments": json.dumps(arguments)}}
+            for cid, name, arguments in calls
+        ],
+        "_native_content": native,
+    }
+    return message, calls, response.usage.model_dump(), response.stop_reason
+
+
+async def complete_openai(
+    client: Any, args: argparse.Namespace, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+) -> tuple[dict[str, Any], list[tuple[str, str, dict[str, Any] | None]], dict[str, Any], str | None]:
+    """One turn against any OpenAI-compatible backend."""
+    kwargs: dict[str, Any] = {"tools": tools} if tools else {}
+    if args.reasoning_effort:
+        kwargs["reasoning_effort"] = args.reasoning_effort
+
+    response = await client.chat.completions.create(
+        model=args.model, messages=[_strip_native(m) for m in messages],
+        max_tokens=args.max_tokens, **kwargs,
+    )
+    choice = response.choices[0]
+    calls = [
+        (call.id, call.function.name, _parse_arguments(call.function.arguments))
+        for call in choice.message.tool_calls or []
+    ]
+    return (
+        choice.message.model_dump(exclude_none=True),
+        calls,
+        response.usage.model_dump() if response.usage else {},
+        choice.finish_reason,
+    )
+
+
+def _strip_native(message: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in message.items() if k != "_native_content"}
+
+
 async def call_mcp_tool(
     session: Client, name: str, arguments: dict[str, Any]
 ) -> tuple[str, bool]:
@@ -127,7 +253,9 @@ async def run(args: argparse.Namespace) -> None:
 
     # Spawn the MCP server and collect its tools.
     async with Client(stdio_client(params)) as session:
-        tools = [_to_openai_tool(tool) for tool in (await session.list_tools()).tools]
+        mcp_tools = (await session.list_tools()).tools
+        tools = [_to_openai_tool(tool) for tool in mcp_tools]
+        anthropic_tools = [_to_anthropic_tool(tool) for tool in mcp_tools]
         print(f"[MCP] connected to {server_name}; {len(tools)} tool(s) available")
 
         logger.write(
@@ -146,24 +274,38 @@ async def run(args: argparse.Namespace) -> None:
         for msg in messages:
             logger.message(msg)
 
-        create_kwargs: dict[str, Any] = {"tools": tools} if tools else {}
-        if args.reasoning_effort:
-            create_kwargs["reasoning_effort"] = args.reasoning_effort
+        use_anthropic = _is_anthropic_model(args.model)
+        if use_anthropic:
+            import anthropic
 
-        async with openai.AsyncOpenAI(
-            base_url=args.base_url,
-            api_key=args.api_key,
-            max_retries=MAX_RETRIES,
-            timeout=args.request_timeout,
-        ) as client:
+            complete = complete_anthropic
+            client_cm = anthropic.AsyncAnthropic(
+                base_url=args.base_url,
+                api_key=args.api_key,
+                max_retries=MAX_RETRIES,
+                timeout=args.request_timeout,
+            )
+            request_tools = anthropic_tools
+        else:
+            complete = complete_openai
+            client_cm = openai.AsyncOpenAI(
+                base_url=args.base_url,
+                api_key=args.api_key,
+                max_retries=MAX_RETRIES,
+                timeout=args.request_timeout,
+            )
+            request_tools = tools
+        print(f"[Model] {args.model} via {'anthropic' if use_anthropic else 'openai'} SDK"
+              + (f"; prompt caching on ({CACHE_TTL} TTL)" if use_anthropic else ""))
+
+        async with client_cm as client:
             for round_idx in range(args.max_rounds):
                 print(f"\n=== Round {round_idx + 1}/{args.max_rounds} ===")
                 start = time.perf_counter()
                 # Ask agent.
                 try:
-                    response = await client.chat.completions.create(
-                        model=args.model, messages=messages,
-                        max_tokens=args.max_tokens, **create_kwargs,
+                    message, calls, usage, finish_reason = await complete(
+                        client, args, messages, request_tools
                     )
                 except Exception as e:
                     if not any(marker in str(e).lower() for marker in _CONTEXT_OVERFLOW_MARKERS):
@@ -183,34 +325,39 @@ async def run(args: argparse.Namespace) -> None:
                     continue
                 elapsed = time.perf_counter() - start
 
-                choice = response.choices[0]
-                message = choice.message
-                text = message.content or ""
-                calls = [
-                    (call, _parse_arguments(call.function.arguments))
-                    for call in message.tool_calls or []
-                ]
-
-                messages.append(message.model_dump(exclude_none=True))
+                text = message.get("content") or ""
+                messages.append(message)
                 logger.message(
-                    messages[-1],
-                    finish_reason=choice.finish_reason,
-                    usage=response.usage.model_dump() if response.usage else {},
+                    _strip_native(messages[-1]),
+                    finish_reason=finish_reason,
+                    usage=usage,
                     elapsed_s=elapsed,
                 )
                 if text:
                     print(text)
 
-                # Nudge past a premature stop without tool use.
+                # The agent stopped without calling a tool. The CLI protocol
+                # answers this with /clear + "continue", so a stop is a context
+                # boundary; --on-stop nudge keeps the conversation instead.
                 if not calls:
-                    messages.append({"role": "user", "content": CONTINUE_MESSAGE})
-                    logger.message(messages[-1])
-                    print("[No tool call; nudging to continue]")
+                    logger.write(type="agent_stop")
+                    if args.on_stop == "clear":
+                        print("[Agent stopped; clearing context and continuing]")
+                        logger.write(type="context_reset", reason="agent_stop")
+                        messages = [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": CONTINUE_MESSAGE},
+                        ]
+                        for msg in messages:
+                            logger.message(msg)
+                    else:
+                        print("[Agent stopped; nudging to continue]")
+                        messages.append({"role": "user", "content": CONTINUE_MESSAGE})
+                        logger.message(messages[-1])
                     continue
 
                 # Run requested tools.
-                for call, arguments in calls:
-                    name = call.function.name
+                for call_id, name, arguments in calls:
                     print(f"Tool call: [{name}] {str(arguments)[:200]}")
                     if arguments is None:
                         output, is_error = "Error: arguments were not a JSON object.", True
@@ -221,7 +368,7 @@ async def run(args: argparse.Namespace) -> None:
 
                     # Send tool result back.
                     messages.append(
-                        {"role": "tool", "tool_call_id": call.id, "content": output}
+                        {"role": "tool", "tool_call_id": call_id, "content": output}
                     )
                     logger.message(messages[-1], name=name, is_error=is_error)
             print(f"[stopped after max_rounds={args.max_rounds}]")
@@ -257,6 +404,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--api-key",
         help="API key (default: $OPENAI_API_KEY, resolved by the OpenAI SDK).",
+    )
+    parser.add_argument(
+        "--on-stop",
+        choices=("clear", "nudge"),
+        default="clear",
+        help="What to do when the agent stops without calling a tool: 'clear' "
+        "discards the conversation and continues (the CLI protocol: /clear then "
+        "\"continue kernel optimization\"), 'nudge' asks it to continue in the "
+        "same conversation (default: clear).",
     )
     parser.add_argument("--max-rounds", type=int, default=DEFAULT_MAX_ROUNDS)
     parser.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
